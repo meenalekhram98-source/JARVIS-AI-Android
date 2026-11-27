@@ -472,12 +472,39 @@ fun JarvisApp(
     }
 }
 
+suspend fun findActiveModel(client: OkHttpClient, cleanKey: String): String? {
+    return try {
+        val listUrl = "https://generativelanguage.googleapis.com/v1beta/models?key=$cleanKey"
+        val req = Request.Builder().url(listUrl).get().build()
+        client.newCall(req).execute().use { res ->
+            if (!res.isSuccessful) return null
+            val json = JSONObject(res.body?.string() ?: "")
+            val models = json.optJSONArray("models") ?: return null
+            val validModels = mutableListOf<String>()
+            for (i in 0 until models.length()) {
+                val m = models.optJSONObject(i) ?: continue
+                val name = m.optString("name").removePrefix("models/")
+                val methods = m.optJSONArray("supportedGenerationMethods")?.toString() ?: ""
+                if (methods.contains("generateContent") && name.contains("gemini") && !name.contains("embedding") && !name.contains("image")) {
+                    validModels.add(name)
+                }
+            }
+            validModels.firstOrNull { it.contains("flash") } ?: validModels.firstOrNull()
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
 suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String = withContext(Dispatchers.IO) {
-    val models = listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash")
+    val cleanKey = apiKey.trim()
     val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    val detectedModel = findActiveModel(client, cleanKey)
+    val modelsToTry = listOfNotNull(detectedModel, "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash-preview").distinct()
 
     val ownerIdentity = "Your creator and owner (malik) is Lekhram Meena (लेखराम मीना). Always address him respectfully as 'लेखराम जी' or 'सर' when appropriate. If anyone asks who your owner/creator is or asks 'mera naam kya hai', clearly state that his name is Lekhram Meena and he is your owner and creator."
 
@@ -488,9 +515,9 @@ suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String
     }
 
     var lastError = ""
-    for (model in models) {
+    for (model in modelsToTry) {
         try {
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=${apiKey.trim()}"
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
             val jsonBody = JSONObject().apply {
                 put("system_instruction", JSONObject().apply {
                     put("parts", JSONArray().put(JSONObject().put("text", systemInstruction)))
@@ -525,4 +552,3 @@ suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String
     }
     return@withContext "समस्या आई ($lastError)"
 }
-
