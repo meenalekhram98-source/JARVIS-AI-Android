@@ -629,7 +629,8 @@ fun isBalancedCode(code: String): Boolean {
     return curly == 0 && round == 0 && code.contains("package com.jarvis.ai")
 }
 
-suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, currentCode: String, instruction: String): String? = withContext(Dispatchers.IO) {
+suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, filePath: String, currentCode: String, instruction: String): String? = withContext(Dispatchers.IO) {
+
     val cleanKey = apiKey.trim()
     val prompt = """
         You are an expert Kotlin & Jetpack Compose engineer modifying `MainActivity.kt` for an Android app.
@@ -695,17 +696,57 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, currentCode:
     try {
         val patches = JSONArray(rawOut)
         if (patches.length() == 0) return@withContext null
-        var updated = currentCode
-        for (i in 0 until patches.length()) {
-            val item = patches.getJSONObject(i)
-            val s = item.getString("search")
-            val r = item.getString("replace")
-            if (!updated.contains(s)) return@withContext null
-            updated = updated.replaceFirst(s, r)
+suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, prompt: String): String? = withContext(Dispatchers.IO) {
+    val cleanKey = apiKey.trim()
+    var rawOut: String? = null
+
+    if (cleanKey.isNotBlank()) {
+        for (model in listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) {
+            try {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
+                val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                val req = Request.Builder().url(url).post(body.toString().toRequestBody("application/json".toMediaType())).build()
+                client.newCall(req).execute().use { res ->
+                    if (res.isSuccessful) {
+                        val txt = JSONObject(res.body?.string() ?: "{}").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "")
+                        if (!txt.isNullOrBlank()) {
+                            rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
+                        }
+                    }
+                }
+                if (rawOut != null) break
+            } catch (_: Exception) {}
         }
-        updated
-    } catch (_: Exception) { null }
+    }
+
+    if (rawOut == null) {
+        try {
+            val fbBody = JSONObject().apply {
+                put("messages", JSONArray().apply {
+                    put(JSONObject().put("role", "system").put("content", "You are an expert Kotlin Android developer. Return ONLY complete valid Kotlin code without markdown fences."))
+                    put(JSONObject().put("role", "user").put("content", prompt))
+                })
+                put("model", "openai")
+            }
+            val fbReq = Request.Builder()
+                .url("https://text.pollinations.ai/openai")
+                .post(fbBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            client.newCall(fbReq).execute().use { res ->
+                if (res.isSuccessful) {
+                    val resText = res.body?.string() ?: "{}"
+                    val txt = JSONObject(resText).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "")
+                    if (!txt.isNullOrBlank()) {
+                        rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    rawOut
 }
+
 
 
 suspend fun selfCodeAndHealGitHub(
