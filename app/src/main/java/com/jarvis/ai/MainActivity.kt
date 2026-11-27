@@ -62,6 +62,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.net.URLEncoder
 import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -140,12 +141,34 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
 
     val messages = remember {
         mutableStateListOf(
-            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। कॉन्टैक्ट कॉलिंग, अलार्म, YouTube और Auto-Update सिस्टम तैयार है।", isUser = false)
+            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। अब मैं बिना किसी सेटअप के खुद नई स्किल्स और बातें सीख सकता हूँ।", isUser = false)
         )
     }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+
+    fun triggerAutoUpdate(update: UpdateInfo) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+                Toast.makeText(context, "कृपया 'Install unknown apps' की अनुमति दें", Toast.LENGTH_LONG).show()
+                context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
+                return
+            }
+            isDownloadingUpdate = true
+            Toast.makeText(context, "नया अपडेट डाउनलोड हो रहा है...", Toast.LENGTH_SHORT).show()
+            downloadAndInstallApk(context, update.apkUrl) { success ->
+                isDownloadingUpdate = false
+                if (success) {
+                    prefs.edit().putString("last_installed_update", update.updatedAt).apply()
+                    pendingUpdate = null
+                }
+            }
+        } catch (e: Exception) {
+            isDownloadingUpdate = false
+            Toast.makeText(context, "अपडेट एरर: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     LaunchedEffect(Unit) {
         try {
@@ -153,7 +176,8 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
             val update = checkGitHubUpdate(lastInstalledDate)
             if (update != null && update.available) {
                 pendingUpdate = update
-                messages.add(ChatMessage("सर, JARVIS का नया अपडेट (${update.title}) उपलब्ध है! ऊपर अपडेट आइकन से 1-क्लिक में इंस्टॉल करें।", isUser = false))
+                messages.add(ChatMessage("सर, JARVIS का नया अपडेट (${update.title}) उपलब्ध है! डाउनलोड शुरू कर रहा हूँ...", isUser = false))
+                triggerAutoUpdate(update)
             }
         } catch (_: Exception) {}
     }
@@ -177,28 +201,6 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         ),
         label = "scale"
     )
-
-    fun triggerAutoUpdate(update: UpdateInfo) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
-                Toast.makeText(context, "कृपया 'Install unknown apps' की अनुमति दें", Toast.LENGTH_LONG).show()
-                context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
-                return
-            }
-            isDownloadingUpdate = true
-            Toast.makeText(context, "नया अपडेट डाउनलोड हो रहा है...", Toast.LENGTH_SHORT).show()
-            downloadAndInstallApk(context, update.apkUrl) { success ->
-                isDownloadingUpdate = false
-                if (success) {
-                    prefs.edit().putString("last_installed_update", update.updatedAt).apply()
-                    pendingUpdate = null
-                }
-            }
-        } catch (e: Exception) {
-            isDownloadingUpdate = false
-            Toast.makeText(context, "अपडेट एरर: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-        }
-    }
 
     var retryQueryCallback by remember { mutableStateOf<((String) -> Unit)?>(null) }
 
@@ -225,6 +227,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         inputText = ""
 
         val qLower = query.lowercase(Locale.getDefault())
+
         if (qLower.contains("update") || qLower.contains("अपडेट")) {
             coroutineScope.launch {
                 isThinking = true
@@ -273,7 +276,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         isThinking = true
         coroutineScope.launch {
             listState.animateScrollToItem(messages.size - 1)
-            val reply = askGemini(apiKey, query, selectedMode)
+            val reply = askGemini(context, apiKey, query, selectedMode)
             isThinking = false
             messages.add(ChatMessage(reply, isUser = false))
             listState.animateScrollToItem(messages.size - 1)
@@ -284,7 +287,6 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     LaunchedEffect(Unit) {
         retryQueryCallback = { q -> sendQuery(q) }
     }
-
     val speechRecognizer = remember {
         try {
             if (SpeechRecognizer.isRecognitionAvailable(context)) {
@@ -300,11 +302,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     }
 
     fun startVoiceRecognition() {
-        val sr = speechRecognizer
-        if (sr == null) {
-            Toast.makeText(context, "इस फोन में वॉइस रिकॉग्निशन उपलब्ध नहीं है", Toast.LENGTH_SHORT).show()
-            return
-        }
+        val sr = speechRecognizer ?: return
         onStopSpeak()
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -336,7 +334,6 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
             sr.startListening(intent)
         } catch (_: Exception) {
             isListening = false
-            Toast.makeText(context, "माइक शुरू करने में दिक्कत आई", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -379,7 +376,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                         coroutineScope.launch {
                             Toast.makeText(context, "अपडेट चेक कर रहा है...", Toast.LENGTH_SHORT).show()
                             val upd = checkGitHubUpdate("")
-                            if (upd != null && upd.apkUrl.isNotBlank()) pendingUpdate = upd
+                            if (upd != null && upd.apkUrl.isNotBlank()) triggerAutoUpdate(upd)
                             else Toast.makeText(context, "कोई नया अपडेट नहीं है", Toast.LENGTH_SHORT).show()
                         }
                     }) {
@@ -460,7 +457,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
-                    placeholder = { Text("JARVIS से पूछें या कमांड दें...", color = Color.Gray, fontSize = 14.sp) },
+                    placeholder = { Text("JARVIS से पूछें या नई स्किल सिखाएं...", color = Color.Gray, fontSize = 14.sp) },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(20.dp),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = cyan, unfocusedBorderColor = Color(0xFF1E3A5F), focusedTextColor = Color.White, unfocusedTextColor = Color.White),
@@ -489,16 +486,6 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                 }
             }
         }
-    }
-
-    pendingUpdate?.let { update ->
-        AlertDialog(
-            onDismissRequest = { pendingUpdate = null },
-            title = { Text("🚀 नया JARVIS अपडेट उपलब्ध!", color = cyan) },
-            text = { Text("वर्जन: ${update.title}\nक्या आप अभी 1-क्लिक में नया अपडेट डाउनलोड और इंस्टॉल करना चाहते हैं?", color = Color.LightGray, fontSize = 14.sp) },
-            confirmButton = { Button(onClick = { triggerAutoUpdate(update) }) { Text("Update Now") } },
-            dismissButton = { TextButton(onClick = { pendingUpdate = null }) { Text("बाद में", color = Color.Gray) } }
-        )
     }
 
     if (showSettings) {
@@ -599,17 +586,40 @@ suspend fun findActiveModel(client: OkHttpClient, cleanKey: String): String? {
     } catch (_: Exception) { null }
 }
 
-suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String = withContext(Dispatchers.IO) {
+suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mode: String): String = withContext(Dispatchers.IO) {
     val cleanKey = apiKey.trim()
+    val prefs = context.getSharedPreferences("jarvis_memory", Context.MODE_PRIVATE)
+    val learnedFacts = prefs.getString("learned_facts", "") ?: ""
+    val learnedSkills = prefs.getString("learned_skills", "") ?: ""
+    val recentHistory = prefs.getString("recent_chat", "") ?: ""
+
     val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
     val detectedModel = findActiveModel(client, cleanKey)
     val modelsToTry = listOfNotNull(detectedModel, "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash-preview").distinct()
 
-    val ownerIdentity = "Your creator and owner (malik) is Lekhram Meena (लेखराम मीना). Always address him respectfully as 'लेखराम जी' or 'सर' when appropriate. If anyone asks who your owner/creator is or asks 'mera naam kya hai', clearly state that his name is Lekhram Meena and he is your owner and creator."
+    val ownerIdentity = """
+        Your creator and owner (malik) is Lekhram Meena (लेखराम मीना). Always address him respectfully as 'लेखराम जी' or 'सर'.
+        You are an INSTANT SELF-EVOLVING, self-learning AI assistant.
+        
+        Learned facts & personal memory about Lekhram ji:
+        $learnedFacts
+        
+        Custom skills & abilities you have taught yourself:
+        $learnedSkills
+        
+        Recent conversation context:
+        $recentHistory
+        
+        SELF-EVOLUTION & ACTION TAGS (Append at the very end of your reply when needed; never mention tags aloud):
+        1. If the user shares any new personal preference, habit, person, or fact: append [LEARN: short fact]
+        2. If the user asks you to add a new skill, rule, behavior, or capability (e.g. "नया फीचर जोड़ो", "ये सीख लो", "अब से ऐसा करना"): append [SKILL: clear rule/capability] and confirm you have upgraded yourself immediately!
+        3. If the user wants to search anything live on Google or open a web service/site to fulfill a task: append [SEARCH: search query]
+    """.trimIndent()
+
     val systemInstruction = when (mode) {
         "STUDY" -> "$ownerIdentity You are JARVIS in Study Mode. Explain concepts clearly in simple Hindi/Hinglish with short examples like a great tutor."
         "TRANSLATOR" -> "$ownerIdentity You are JARVIS Translator. If the user writes in Hindi, translate it to natural English. If in English or another language, translate it to clear Hindi."
-        else -> "$ownerIdentity You are JARVIS, a smart, loyal, and polite personal AI assistant. Answer concisely in natural Hindi/Hinglish. Keep answers brief so they sound good when spoken aloud."
+        else -> "$ownerIdentity You are JARVIS, a smart, loyal, self-improving personal AI assistant. Answer concisely in natural Hindi/Hinglish so it sounds great when spoken aloud."
     }
 
     var lastError = ""
@@ -624,8 +634,38 @@ suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String
             client.newCall(request).execute().use { response ->
                 val responseText = response.body?.string() ?: ""
                 if (response.isSuccessful) {
-                    val reply = JSONObject(responseText).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")?.trim()
-                    if (!reply.isNullOrBlank()) return@withContext reply
+                    var reply = JSONObject(responseText).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")?.trim()
+                    if (!reply.isNullOrBlank()) {
+                        val learnRegex = Regex("\\[LEARN:(.*?)\\]")
+                        learnRegex.find(reply)?.let {
+                            val updatedFacts = (learnedFacts + "\n- " + it.groupValues[1].trim()).takeLast(2500)
+                            prefs.edit().putString("learned_facts", updatedFacts).apply()
+                            reply = reply!!.replace(learnRegex, "").trim()
+                        }
+
+                        val skillRegex = Regex("\\[SKILL:(.*?)\\]")
+                        skillRegex.find(reply)?.let {
+                            val updatedSkills = (learnedSkills + "\n- " + it.groupValues[1].trim()).takeLast(2500)
+                            prefs.edit().putString("learned_skills", updatedSkills).apply()
+                            reply = reply!!.replace(skillRegex, "").trim()
+                        }
+
+                        val searchRegex = Regex("\\[SEARCH:(.*?)\\]")
+                        searchRegex.find(reply)?.let {
+                            val queryToSearch = it.groupValues[1].trim()
+                            reply = reply!!.replace(searchRegex, "").trim()
+                            withContext(Dispatchers.Main) {
+                                try {
+                                    val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(queryToSearch, "UTF-8")}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(searchIntent)
+                                } catch (_: Exception) {}
+                            }
+                        }
+
+                        val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $reply").takeLast(1500)
+                        prefs.edit().putString("recent_chat", updatedHistory).apply()
+                        return@withContext reply!!
+                    }
                 } else {
                     lastError = "Error ${response.code}: ${try { JSONObject(responseText).optJSONObject("error")?.optString("message") ?: responseText } catch (_: Exception) { responseText }}"
                 }
