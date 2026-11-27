@@ -637,21 +637,21 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
                     var reply = JSONObject(responseText).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")?.trim()
                     if (!reply.isNullOrBlank()) {
                         val learnRegex = Regex("\\[LEARN:(.*?)\\]")
-                        learnRegex.find(reply)?.let {
+                        learnRegex.find(reply!!)?.let {
                             val updatedFacts = (learnedFacts + "\n- " + it.groupValues[1].trim()).takeLast(2500)
                             prefs.edit().putString("learned_facts", updatedFacts).apply()
                             reply = reply!!.replace(learnRegex, "").trim()
                         }
 
                         val skillRegex = Regex("\\[SKILL:(.*?)\\]")
-                        skillRegex.find(reply)?.let {
+                        skillRegex.find(reply!!)?.let {
                             val updatedSkills = (learnedSkills + "\n- " + it.groupValues[1].trim()).takeLast(2500)
                             prefs.edit().putString("learned_skills", updatedSkills).apply()
                             reply = reply!!.replace(skillRegex, "").trim()
                         }
 
                         val searchRegex = Regex("\\[SEARCH:(.*?)\\]")
-                        searchRegex.find(reply)?.let {
+                        searchRegex.find(reply!!)?.let {
                             val queryToSearch = it.groupValues[1].trim()
                             reply = reply!!.replace(searchRegex, "").trim()
                             withContext(Dispatchers.Main) {
