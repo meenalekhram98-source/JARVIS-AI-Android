@@ -344,7 +344,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
      onSpeechFinishedCallback = {
          if (prefs.getBoolean("auto_listen", false) && !isListening) startVoiceRecognition()
      }
- 
+          } 
 
      
 
