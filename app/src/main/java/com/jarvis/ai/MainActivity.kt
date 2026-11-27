@@ -7,15 +7,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
-import android.provider.AlarmClock
-import android.provider.ContactsContract
-import android.provider.MediaStore
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -67,22 +62,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.net.URLEncoder
 import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-data class ChatMessage(
-    val text: String,
-    val isUser: Boolean
-)
+data class ChatMessage(val text: String, val isUser: Boolean)
 
-data class UpdateInfo(
-    val available: Boolean,
-    val title: String,
-    val apkUrl: String,
-    val updatedAt: String
-)
+data class UpdateInfo(val available: Boolean, val title: String, val apkUrl: String, val updatedAt: String)
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
@@ -91,7 +77,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
-
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 JarvisApp(
@@ -129,10 +114,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 }
 
 @Composable
-fun JarvisApp(
-    onSpeak: (String) -> Unit,
-    onStopSpeak: () -> Unit
-) {
+fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE) }
     var apiKey by remember { mutableStateOf(prefs.getString("gemini_api_key", "") ?: "") }
@@ -188,8 +170,7 @@ fun JarvisApp(
     fun triggerAutoUpdate(update: UpdateInfo) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
             Toast.makeText(context, "कृपया 'Install unknown apps' की अनुमति दें", Toast.LENGTH_LONG).show()
-            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
-            context.startActivity(intent)
+            context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")))
             return
         }
         isDownloadingUpdate = true
@@ -284,9 +265,7 @@ fun JarvisApp(
     }
 
     val speechRecognizer = remember { SpeechRecognizer.createSpeechRecognizer(context) }
-    DisposableEffect(Unit) {
-        onDispose { speechRecognizer.destroy() }
-    }
+    DisposableEffect(Unit) { onDispose { speechRecognizer.destroy() } }
 
     fun startVoiceRecognition() {
         onStopSpeak()
@@ -295,7 +274,6 @@ fun JarvisApp(
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         }
-
         speechRecognizer.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) { isListening = true }
             override fun onBeginningOfSpeech() {}
@@ -309,9 +287,7 @@ fun JarvisApp(
             override fun onResults(results: Bundle?) {
                 isListening = false
                 val spoken = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                if (!spoken.isNullOrBlank()) {
-                    sendQuery(spoken)
-                }
+                if (!spoken.isNullOrBlank()) sendQuery(spoken)
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
@@ -319,7 +295,6 @@ fun JarvisApp(
             }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
-
         speechRecognizer.startListening(intent)
     }
 
@@ -337,11 +312,7 @@ fun JarvisApp(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFF10243A), background, Color(0xFF02050B))
-                    )
-                )
+                .background(Brush.verticalGradient(listOf(Color(0xFF10243A), background, Color(0xFF02050B))))
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 10.dp)
@@ -355,7 +326,6 @@ fun JarvisApp(
                     Text("J.A.R.V.I.S", color = cyan, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Text(greeting, color = Color.LightGray, fontSize = 10.sp, letterSpacing = 1.5.sp)
                 }
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         if (isDownloadingUpdate) "UPDATING..." else if (isListening) "LISTENING..." else if (isThinking) "THINKING..." else "ONLINE",
@@ -367,28 +337,17 @@ fun JarvisApp(
                         coroutineScope.launch {
                             Toast.makeText(context, "अपडेट चेक कर रहा है...", Toast.LENGTH_SHORT).show()
                             val upd = checkGitHubUpdate("")
-                            if (upd != null && upd.apkUrl.isNotBlank()) {
-                                pendingUpdate = upd
-                            } else {
-                                Toast.makeText(context, "कोई नया अपडेट नहीं है", Toast.LENGTH_SHORT).show()
-                            }
+                            if (upd != null && upd.apkUrl.isNotBlank()) pendingUpdate = upd
+                            else Toast.makeText(context, "कोई नया अपडेट नहीं है", Toast.LENGTH_SHORT).show()
                         }
                     }) {
-                        Icon(
-                            Icons.Default.SystemUpdate,
-                            contentDescription = "Check Update",
-                            tint = if (pendingUpdate != null) Color(0xFFFFD54F) else cyan
-                        )
+                        Icon(Icons.Default.SystemUpdate, contentDescription = "Check Update", tint = if (pendingUpdate != null) Color(0xFFFFD54F) else cyan)
                     }
                     IconButton(onClick = {
                         voiceOutputEnabled = !voiceOutputEnabled
                         if (!voiceOutputEnabled) onStopSpeak()
                     }) {
-                        Icon(
-                            if (voiceOutputEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
-                            contentDescription = "Voice Toggle",
-                            tint = cyan
-                        )
+                        Icon(if (voiceOutputEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff, contentDescription = "Voice Toggle", tint = cyan)
                     }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings", tint = cyan)
@@ -396,26 +355,14 @@ fun JarvisApp(
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("JARVIS" to "🤖 AI Brain", "STUDY" to "📚 Study", "TRANSLATOR" to "🌐 Translate").forEach { (mode, label) ->
                     val isSelected = selectedMode == mode
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .background(
-                                if (isSelected) cyan.copy(alpha = 0.25f) else Color(0xFF0D1B2A),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .border(
-                                1.dp,
-                                if (isSelected) cyan else Color(0xFF1E3A5F),
-                                RoundedCornerShape(12.dp)
-                            )
+                            .background(if (isSelected) cyan.copy(alpha = 0.25f) else Color(0xFF0D1B2A), RoundedCornerShape(12.dp))
+                            .border(1.dp, if (isSelected) cyan else Color(0xFF1E3A5F), RoundedCornerShape(12.dp))
                             .clickable { selectedMode = mode }
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
@@ -425,136 +372,76 @@ fun JarvisApp(
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(105.dp),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.fillMaxWidth().height(105.dp), contentAlignment = Alignment.Center) {
                 Box(
                     modifier = Modifier
                         .size(80.dp)
                         .scale(pulseScale)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(
-                                    if (isListening) Color(0x88FF5252) else Color(0x8845E6FF),
-                                    Color.Transparent
-                                )
-                            ),
-                            CircleShape
-                        )
+                        .background(Brush.radialGradient(listOf(if (isListening) Color(0x88FF5252) else Color(0x8845E6FF), Color.Transparent)), CircleShape)
                         .clickable {
                             if (isListening) {
                                 speechRecognizer.stopListening()
                                 isListening = false
+                            } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                startVoiceRecognition()
                             } else {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                    startVoiceRecognition()
-                                } else {
-                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             }
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        "◉",
-                        color = if (isListening) Color(0xFFFF6B6B) else cyan,
-                        fontSize = 52.sp
-                    )
+                    Text("◉", color = if (isListening) Color(0xFFFF6B6B) else cyan, fontSize = 52.sp)
                 }
             }
 
             LazyColumn(
                 state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(messages) { msg ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (msg.isUser) Arrangement.End else Arrangement.Start
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (msg.isUser) Arrangement.End else Arrangement.Start) {
                         Box(
                             modifier = Modifier
                                 .widthIn(max = 290.dp)
-                                .background(
-                                    if (msg.isUser) Color(0xFF087E9B) else Color(0xFF10243A),
-                                    RoundedCornerShape(16.dp)
-                                )
-                                .border(
-                                    1.dp,
-                                    if (msg.isUser) cyan.copy(alpha = 0.5f) else Color(0xFF1E3A5F),
-                                    RoundedCornerShape(16.dp)
-                                )
+                                .background(if (msg.isUser) Color(0xFF087E9B) else Color(0xFF10243A), RoundedCornerShape(16.dp))
+                                .border(1.dp, if (msg.isUser) cyan.copy(alpha = 0.5f) else Color(0xFF1E3A5F), RoundedCornerShape(16.dp))
                                 .padding(12.dp)
                         ) {
-                            Text(
-                                text = msg.text,
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
+                            Text(text = msg.text, color = Color.White, fontSize = 14.sp)
                         }
                     }
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
                     placeholder = { Text("JARVIS से पूछें या कमांड दें...", color = Color.Gray, fontSize = 14.sp) },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(20.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = cyan,
-                        unfocusedBorderColor = Color(0xFF1E3A5F),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = cyan, unfocusedBorderColor = Color(0xFF1E3A5F), focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                     singleLine = true
                 )
-
                 IconButton(
                     onClick = {
                         if (isListening) {
                             speechRecognizer.stopListening()
                             isListening = false
+                        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            startVoiceRecognition()
                         } else {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                startVoiceRecognition()
-                            } else {
-                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            }
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
                     },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(if (isListening) Color(0xFFD32F2F) else Color(0xFF10243A), CircleShape)
-                        .border(1.dp, cyan, CircleShape)
+                    modifier = Modifier.size(48.dp).background(if (isListening) Color(0xFFD32F2F) else Color(0xFF10243A), CircleShape).border(1.dp, cyan, CircleShape)
                 ) {
-                    Icon(
-                        if (isListening) Icons.Default.Stop else Icons.Default.Mic,
-                        contentDescription = "Mic",
-                        tint = Color.White
-                    )
+                    Icon(if (isListening) Icons.Default.Stop else Icons.Default.Mic, contentDescription = "Mic", tint = Color.White)
                 }
-
                 IconButton(
                     onClick = { sendQuery(inputText) },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(Color(0xFF087E9B), CircleShape)
+                    modifier = Modifier.size(48.dp).background(Color(0xFF087E9B), CircleShape)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White)
                 }
@@ -566,23 +453,9 @@ fun JarvisApp(
         AlertDialog(
             onDismissRequest = { pendingUpdate = null },
             title = { Text("🚀 नया JARVIS अपडेट उपलब्ध!", color = cyan) },
-            text = {
-                Text(
-                    "वर्जन: ${update.title}\nक्या आप अभी 1-क्लिक में नया अपडेट डाउनलोड और इंस्टॉल करना चाहते हैं?",
-                    color = Color.LightGray,
-                    fontSize = 14.sp
-                )
-            },
-            confirmButton = {
-                Button(onClick = { triggerAutoUpdate(update) }) {
-                    Text("Update Now")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingUpdate = null }) {
-                    Text("बाद में", color = Color.Gray)
-                }
-            }
+            text = { Text("वर्जन: ${update.title}\nक्या आप अभी 1-क्लिक में नया अपडेट डाउनलोड और इंस्टॉल करना चाहते हैं?", color = Color.LightGray, fontSize = 14.sp) },
+            confirmButton = { Button(onClick = { triggerAutoUpdate(update) }) { Text("Update Now") } },
+            dismissButton = { TextButton(onClick = { pendingUpdate = null }) { Text("बाद में", color = Color.Gray) } }
         )
     }
 
@@ -593,19 +466,9 @@ fun JarvisApp(
             title = { Text("JARVIS Brain Setup", color = cyan) },
             text = {
                 Column {
-                    Text(
-                        "अपनी मुफ्त Google Gemini API Key यहाँ पेस्ट करें (aistudio.google.com से बनाएं):",
-                        fontSize = 13.sp,
-                        color = Color.LightGray
-                    )
+                    Text("अपनी मुफ्त Google Gemini API Key यहाँ पेस्ट करें (aistudio.google.com से बनाएं):", fontSize = 13.sp, color = Color.LightGray)
                     Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = tempKey,
-                        onValueChange = { tempKey = it },
-                        label = { Text("Gemini API Key") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    OutlinedTextField(value = tempKey, onValueChange = { tempKey = it }, label = { Text("Gemini API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
             },
             confirmButton = {
@@ -614,9 +477,7 @@ fun JarvisApp(
                     prefs.edit().putString("gemini_api_key", apiKey).apply()
                     showSettings = false
                     Toast.makeText(context, "API Key सेव हो गई!", Toast.LENGTH_SHORT).show()
-                }) {
-                    Text("Save")
-                }
+                }) { Text("Save") }
             }
         )
     }
@@ -625,58 +486,47 @@ fun JarvisApp(
 suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContext(Dispatchers.IO) {
     try {
         val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build()
-        val url = "https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/releases/latest"
-        val req = Request.Builder().url(url).header("Accept", "application/vnd.github+json").build()
+        val req = Request.Builder().url("https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/releases/latest").header("Accept", "application/vnd.github+json").build()
         client.newCall(req).execute().use { res ->
             if (!res.isSuccessful) return@withContext null
             val json = JSONObject(res.body?.string() ?: "")
             val assets = json.optJSONArray("assets") ?: return@withContext null
             for (i in 0 until assets.length()) {
                 val asset = assets.optJSONObject(i) ?: continue
-                val name = asset.optString("name")
-                if (name.endsWith(".apk")) {
+                if (asset.optString("name").endsWith(".apk")) {
                     val apkUrl = asset.optString("browser_download_url")
                     val updatedAt = asset.optString("updated_at")
                     val body = json.optString("body", "Latest Build")
-                    val isNew = lastInstalledAt.isBlank() || updatedAt != lastInstalledAt
-                    return@withContext UpdateInfo(isNew, body, apkUrl, updatedAt)
+                    return@withContext UpdateInfo(lastInstalledAt.isBlank() || updatedAt != lastInstalledAt, body, apkUrl, updatedAt)
                 }
             }
             null
         }
-    } catch (_: Exception) {
-        null
-    }
+    } catch (_: Exception) { null }
 }
 
 fun downloadAndInstallApk(context: Context, apkUrl: String, onDone: (Boolean) -> Unit) {
     try {
-        val fileName = "jarvis_update.apk"
-        val destFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
+        val destFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "jarvis_update.apk")
         if (destFile.exists()) destFile.delete()
-
         val request = DownloadManager.Request(Uri.parse(apkUrl)).apply {
             setTitle("JARVIS AI Update")
             setDescription("Downloading latest JARVIS version...")
             setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, fileName)
+            setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "jarvis_update.apk")
         }
-
         val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val downloadId = dm.enqueue(request)
-
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
-                val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) ?: -1
-                if (id == downloadId) {
+                if (intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) == downloadId) {
                     try { context.unregisterReceiver(this) } catch (_: Exception) {}
                     onDone(true)
                     val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
-                    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                    context.startActivity(Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(apkUri, "application/vnd.android.package-archive")
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(installIntent)
+                    })
                 }
             }
         }
@@ -687,115 +537,58 @@ fun downloadAndInstallApk(context: Context, apkUrl: String, onDone: (Boolean) ->
     }
 }
 
-fun findFlashCameraId(cameraManager: CameraManager): String? {
-    var fallbackFlashId: String? = null
-    for (id in cameraManager.cameraIdList) {
-        val chars = cameraManager.getCameraCharacteristics(id)
-        val hasFlash = chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-        if (hasFlash) {
-            val facing = chars.get(CameraCharacteristics.LENS_FACING)
-            if (facing == CameraCharacteristics.LENS_FACING_BACK) return id
-            if (fallbackFlashId == null) fallbackFlashId = id
-        }
-    }
-    return fallbackFlashId
-}
-
-fun findContactPhoneByName(context: Context, searchName: String): Pair<String, String>? {
-    val target = searchName.trim().lowercase(Locale.getDefault())
-    if (target.length < 2) return null
-    val cursor = context.contentResolver.query(
-        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-        arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER
-        ),
-        null,
-        null,
-        null
-    )
-    cursor?.use {
-        var partialMatch: Pair<String, String>? = null
-        while (it.moveToNext()) {
-            val name = it.getString(0) ?: continue
-            val number = it.getString(1)?.replace(Regex("[^0-9+]"), "") ?: continue
-            val nameLower = name.lowercase(Locale.getDefault())
-            if (nameLower == target) return name to number
-            if (nameLower.contains(target) || target.contains(nameLower)) {
-                partialMatch = name to number
-            }
-        }
-        return partialMatch
-    }
-    return null
-}
-
-fun handleDeviceCommand(context: Context, rawQuery: String): String? {
-    val q = rawQuery.lowercase(Locale.getDefault()).trim()
-
-    // 1. Flashlight / Torch Control
-    if (q.contains("torch") || q.contains("flashlight") || q.contains("टॉर्च") || q.contains("फ्लैशलाइट") || q.contains("लाइट")) {
-        val turnOn = q.contains("on") || q.contains("ऑन") || q.contains("चालू") || q.contains("जला") || q.contains("ओपन") || q.contains("खोल")
-        val turnOff = q.contains("off") || q.contains("ऑफ") || q.contains("बंद") || q.contains("बुझा")
-        if (turnOn || turnOff) {
-            return try {
-                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val cameraId = findFlashCameraId(cameraManager)
-                if (cameraId != null) {
-                    cameraManager.setTorchMode(cameraId, turnOn)
-                    if (turnOn) "जी लेखराम जी, टॉर्च ऑन कर दी गई है।" else "जी लेखराम जी, टॉर्च बंद कर दी गई है।"
-                } else {
-                    "माफ़ कीजिए सर, इस फोन में फ्लैशलाइट हार्डवेयर नहीं मिला।"
+suspend fun findActiveModel(client: OkHttpClient, cleanKey: String): String? {
+    return try {
+        val req = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models?key=$cleanKey").get().build()
+        client.newCall(req).execute().use { res ->
+            if (!res.isSuccessful) return null
+            val models = JSONObject(res.body?.string() ?: "").optJSONArray("models") ?: return null
+            val validModels = mutableListOf<String>()
+            for (i in 0 until models.length()) {
+                val m = models.optJSONObject(i) ?: continue
+                val name = m.optString("name").removePrefix("models/")
+                val methods = m.optJSONArray("supportedGenerationMethods")?.toString() ?: ""
+                if (methods.contains("generateContent") && name.contains("gemini") && !name.contains("embedding") && !name.contains("image")) {
+                    validModels.add(name)
                 }
-            } catch (e: Exception) {
-                "टॉर्च चालू करने में समस्या आई: ${e.localizedMessage}"
             }
+            validModels.firstOrNull { it.contains("flash") } ?: validModels.firstOrNull()
         }
+    } catch (_: Exception) { null }
+}
+
+suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String = withContext(Dispatchers.IO) {
+    val cleanKey = apiKey.trim()
+    val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+    val detectedModel = findActiveModel(client, cleanKey)
+    val modelsToTry = listOfNotNull(detectedModel, "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3-flash-preview").distinct()
+
+    val ownerIdentity = "Your creator and owner (malik) is Lekhram Meena (लेखराम मीना). Always address him respectfully as 'लेखराम जी' or 'सर' when appropriate. If anyone asks who your owner/creator is or asks 'mera naam kya hai', clearly state that his name is Lekhram Meena and he is your owner and creator."
+    val systemInstruction = when (mode) {
+        "STUDY" -> "$ownerIdentity You are JARVIS in Study Mode. Explain concepts clearly in simple Hindi/Hinglish with short examples like a great tutor."
+        "TRANSLATOR" -> "$ownerIdentity You are JARVIS Translator. If the user writes in Hindi, translate it to natural English. If in English or another language, translate it to clear Hindi."
+        else -> "$ownerIdentity You are JARVIS, a smart, loyal, and polite personal AI assistant. Answer concisely in natural Hindi/Hinglish. Keep answers brief so they sound good when spoken aloud."
     }
 
-    // 2. Timer Control
-    if (q.contains("timer") || q.contains("टाइमर")) {
-        val numMatch = Regex("(\\d+)").find(q)
-        val amount = numMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
-        val isSec = q.contains("second") || q.contains("सेकंड")
-        val seconds = if (isSec) amount else amount * 60
-        val unitLabel = if (isSec) "सेकंड" else "मिनट"
-        val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
-            putExtra(AlarmClock.EXTRA_LENGTH, seconds)
-            putExtra(AlarmClock.EXTRA_MESSAGE, "JARVIS Timer")
-            putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        return try {
-            context.startActivity(intent)
-            "जी लेखराम जी, $amount$unitLabel का टाइमर सेट कर रहा हूँ।"
-        } catch (_: Exception) {
-            "टाइमर सेट करने में समस्या आई।"
-        }
+    var lastError = ""
+    for (model in modelsToTry) {
+        try {
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
+            val jsonBody = JSONObject().apply {
+                put("system_instruction", JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))) })
+                put("contents", JSONArray().put(JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", userMessage))) }))
+            }
+            val request = Request.Builder().url(url).post(jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+            client.newCall(request).execute().use { response ->
+                val responseText = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val reply = JSONObject(responseText).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")?.trim()
+                    if (!reply.isNullOrBlank()) return@withContext reply
+                } else {
+                    lastError = "Error ${response.code}: ${try { JSONObject(responseText).optJSONObject("error")?.optString("message") ?: responseText } catch (_: Exception) { responseText }}"
+                }
+            }
+        } catch (e: Exception) { lastError = e.localizedMessage ?: "Network error" }
     }
-
-    // 3. Alarm Control
-    if (q.contains("alarm") || q.contains("अलार्म")) {
-        val timeMatch = Regex("(\\d{1,2})(?::(\\d{2}))?").find(q)
-        var hour = timeMatch?.groupValues?.get(1)?.toIntOrNull() ?: 7
-        val minute = timeMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
-        if ((q.contains("शाम") || q.contains("रात") || q.contains("pm")) && hour < 12) {
-            hour += 12
-        }
-        val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-            putExtra(AlarmClock.EXTRA_HOUR, hour)
-            putExtra(AlarmClock.EXTRA_MINUTES, minute)
-            putExtra(AlarmClock.EXTRA_MESSAGE, "JARVIS Alarm")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        return try {
-            context.startActivity(intent)
-            val minFormatted = String.format(Locale.US, "%02d", minute)
-            "जी लेखराम जी, $hour:$minFormatted का अलार्म सेट कर रहा हूँ।"
-        } catch (_: Exception) {
-            "अलार्म सेट करने में समस्या आई।"
-        }
-    }
-
-    // 4. YouTube Search / Play Video or Song
-    if ((q.contains("youtube") || q.contains("यूट्यूब")) && (q.contains("चला") || q.contains("play") || q.contains("search") || q.contains("सर्च") || q.contains("खोज") ||
+    return@withContext "समस्या आई ($lastError)"
+}
