@@ -267,11 +267,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
             return
         }
 
-        if (apiKey.isBlank()) {
-            showSettings = true
-            Toast.makeText(context, "कृपया पहले Gemini API Key डालें", Toast.LENGTH_SHORT).show()
-            return
-        }
+        
 
         isThinking = true
         coroutineScope.launch {
@@ -594,7 +590,8 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
     val recentHistory = prefs.getString("recent_chat", "") ?: ""
 
     val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
-          val modelsToTry = listOf(
+           val modelsToTry = if (cleanKey.isBlank()) emptyList() else listOf(
+
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
