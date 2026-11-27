@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
@@ -152,7 +153,6 @@ fun JarvisApp(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Automatic Update Check on Startup
     LaunchedEffect(Unit) {
         val lastInstalledDate = prefs.getString("last_installed_update", "") ?: ""
         val update = checkGitHubUpdate(lastInstalledDate)
@@ -227,7 +227,6 @@ fun JarvisApp(
             return
         }
 
-        // Check for Phase 2 Phone Automation Commands
         val deviceReply = handleDeviceCommand(context, query)
         if (deviceReply != null) {
             messages.add(ChatMessage(deviceReply, isUser = false))
@@ -535,7 +534,6 @@ fun JarvisApp(
         }
     }
 
-    // 1-Click Auto Update Dialog
     pendingUpdate?.let { update ->
         AlertDialog(
             onDismissRequest = { pendingUpdate = null },
@@ -661,22 +659,40 @@ fun downloadAndInstallApk(context: Context, apkUrl: String, onDone: (Boolean) ->
     }
 }
 
+fun findFlashCameraId(cameraManager: CameraManager): String? {
+    var fallbackFlashId: String? = null
+    for (id in cameraManager.cameraIdList) {
+        val chars = cameraManager.getCameraCharacteristics(id)
+        val hasFlash = chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        if (hasFlash) {
+            val facing = chars.get(CameraCharacteristics.LENS_FACING)
+            if (facing == CameraCharacteristics.LENS_FACING_BACK) {
+                return id
+            }
+            if (fallbackFlashId == null) {
+                fallbackFlashId = id
+            }
+        }
+    }
+    return fallbackFlashId
+}
+
 fun handleDeviceCommand(context: Context, rawQuery: String): String? {
     val q = rawQuery.lowercase(Locale.getDefault()).trim()
 
     // 1. Flashlight / Torch Control
     if (q.contains("torch") || q.contains("flashlight") || q.contains("टॉर्च") || q.contains("फ्लैशलाइट") || q.contains("लाइट")) {
-        val turnOn = q.contains("on") || q.contains("चालू") || q.contains("जला") || q.contains("ओपन") || q.contains("खोल")
-        val turnOff = q.contains("off") || q.contains("बंद") || q.contains("बुझा")
+        val turnOn = q.contains("on") || q.contains("ऑन") || q.contains("चालू") || q.contains("जला") || q.contains("ओपन") || q.contains("खोल")
+        val turnOff = q.contains("off") || q.contains("ऑफ") || q.contains("बंद") || q.contains("बुझा")
         if (turnOn || turnOff) {
             return try {
                 val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val cameraId = cameraManager.cameraIdList.firstOrNull()
+                val cameraId = findFlashCameraId(cameraManager)
                 if (cameraId != null) {
                     cameraManager.setTorchMode(cameraId, turnOn)
                     if (turnOn) "जी लेखराम जी, टॉर्च ऑन कर दी गई है।" else "जी लेखराम जी, टॉर्च बंद कर दी गई है।"
                 } else {
-                    "माफ़ कीजिए सर, इस फोन में टॉर्च कंट्रोल उपलब्ध नहीं है।"
+                    "माफ़ कीजिए सर, इस फोन में फ्लैशलाइट हार्डवेयर नहीं मिला।"
                 }
             } catch (e: Exception) {
                 "टॉर्च चालू करने में समस्या आई: ${e.localizedMessage}"
@@ -699,11 +715,11 @@ fun handleDeviceCommand(context: Context, rawQuery: String): String? {
     }
 
     // 3. WhatsApp Direct Message
-    if ((q.contains("whatsapp") || q.contains("व्हाट्सएप")) && (q.contains("भेज") || q.contains("send") || q.contains("message") || q.contains("मैसेज"))) {
+    if ((q.contains("whatsapp") || q.contains("व्हाट्सएप") || q.contains("व्हाट्सऐप")) && (q.contains("भेज") || q.contains("send") || q.contains("message") || q.contains("मैसेज"))) {
         val digits = rawQuery.filter { it.isDigit() }
         if (digits.length >= 10) {
             val phone = if (digits.length == 10) "91$digits" else digits
-            val msgText = rawQuery.replace(Regex("(?i)(whatsapp|व्हाट्सएप|पर|को|मैसेज|भेजो|भेज|send|message)"), "")
+            val msgText = rawQuery.replace(Regex("(?i)(whatsapp|व्हाट्सएप|व्हाट्सऐप|पर|को|मैसेज|भेजो|भेज|send|message)"), "")
                 .replace(Regex("[0-9+\\-\\s]{10,}"), "")
                 .trim()
                 .ifBlank { "नमस्ते" }
@@ -732,8 +748,8 @@ fun handleDeviceCommand(context: Context, rawQuery: String): String? {
         }
     }
 
-    // 5. Open Popular Apps
-    val openKeywords = listOf("open", "खोलो", "खोल", "चलाओ", "ओपन")
+    // 5. Open Popular Apps (includes "ऑन" / "चालू" / "खोलो" / "open")
+    val openKeywords = listOf("open", "खोलो", "खोल", "चलाओ", "ओपन", "ऑन", "on", "चालू")
     if (openKeywords.any { q.contains(it) }) {
         if (q.contains("camera") || q.contains("कैमरा")) {
             context.startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -741,7 +757,7 @@ fun handleDeviceCommand(context: Context, rawQuery: String): String? {
         }
         val appPackages = mapOf(
             listOf("youtube", "यूट्यूब") to ("YouTube" to "com.google.android.youtube"),
-            listOf("whatsapp", "व्हाट्सएप") to ("WhatsApp" to "com.whatsapp"),
+            listOf("whatsapp", "व्हाट्सएप", "व्हाट्सऐप") to ("WhatsApp" to "com.whatsapp"),
             listOf("chrome", "क्रोम", "browser") to ("Chrome" to "com.android.chrome"),
             listOf("maps", "मैप", "नक्शा") to ("Google Maps" to "com.google.android.apps.maps"),
             listOf("instagram", "इंस्टाग्राम") to ("Instagram" to "com.instagram.android"),
@@ -845,4 +861,3 @@ suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String
     }
     return@withContext "समस्या आई ($lastError)"
 }
-
