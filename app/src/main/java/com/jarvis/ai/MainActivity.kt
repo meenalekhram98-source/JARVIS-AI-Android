@@ -70,11 +70,12 @@ import java.util.concurrent.TimeUnit
 data class ChatMessage(val text: String, val isUser: Boolean)
 
 data class UpdateInfo(val available: Boolean, val title: String, val apkUrl: String, val updatedAt: String)
+var onSpeechFinishedCallback: (() -> Unit)? = null
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
-    var onSpeechFinishedCallback: (() -> Unit)? = null
+    
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -774,5 +775,5 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
     return@withContext "समस्या आई ($lastError)"
 
 }
- 
+} 
 
