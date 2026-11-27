@@ -1,10 +1,19 @@
 package com.jarvis.ai
 
 import android.Manifest
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -29,6 +38,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
@@ -43,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -52,6 +63,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.net.URLEncoder
 import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -59,6 +72,13 @@ import java.util.concurrent.TimeUnit
 data class ChatMessage(
     val text: String,
     val isUser: Boolean
+)
+
+data class UpdateInfo(
+    val available: Boolean,
+    val title: String,
+    val apkUrl: String,
+    val updatedAt: String
 )
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
@@ -120,15 +140,27 @@ fun JarvisApp(
     var isThinking by remember { mutableStateOf(false) }
     var voiceOutputEnabled by remember { mutableStateOf(true) }
     var selectedMode by remember { mutableStateOf("JARVIS") }
+    var pendingUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+    var isDownloadingUpdate by remember { mutableStateOf(false) }
 
     val messages = remember {
         mutableStateListOf(
-            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। बताइए, आज मैं आपकी क्या मदद कर सकता हूँ?", isUser = false)
+            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। Auto-Update और स्मार्ट कंट्रोल सिस्टम चालू है।", isUser = false)
         )
     }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+
+    // Automatic Update Check on Startup
+    LaunchedEffect(Unit) {
+        val lastInstalledDate = prefs.getString("last_installed_update", "") ?: ""
+        val update = checkGitHubUpdate(lastInstalledDate)
+        if (update != null && update.available) {
+            pendingUpdate = update
+            messages.add(ChatMessage("सर, JARVIS का नया अपडेट (${update.title}) उपलब्ध है! ऊपर अपडेट आइकन या डायलॉग से 1-क्लिक में इंस्टॉल करें।", isUser = false))
+        }
+    }
 
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -150,16 +182,66 @@ fun JarvisApp(
         label = "scale"
     )
 
+    fun triggerAutoUpdate(update: UpdateInfo) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(context, "कृपया 'Install unknown apps' की अनुमति दें", Toast.LENGTH_LONG).show()
+            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+            context.startActivity(intent)
+            return
+        }
+        isDownloadingUpdate = true
+        Toast.makeText(context, "नया अपडेट डाउनलोड हो रहा है...", Toast.LENGTH_SHORT).show()
+        downloadAndInstallApk(context, update.apkUrl) { success ->
+            isDownloadingUpdate = false
+            if (success) {
+                prefs.edit().putString("last_installed_update", update.updatedAt).apply()
+                pendingUpdate = null
+            }
+        }
+    }
+
     fun sendQuery(query: String) {
         if (query.isBlank()) return
+        messages.add(ChatMessage(query, isUser = true))
+        inputText = ""
+
+        val qLower = query.lowercase(Locale.getDefault())
+        if (qLower.contains("update") || qLower.contains("अपडेट")) {
+            coroutineScope.launch {
+                isThinking = true
+                val update = checkGitHubUpdate("")
+                isThinking = false
+                if (update != null && update.apkUrl.isNotBlank()) {
+                    pendingUpdate = update
+                    val msg = "जी लेखराम जी, लेटेस्ट वर्जन (${update.title}) मिल गया है। डाउनलोड शुरू कर रहा हूँ।"
+                    messages.add(ChatMessage(msg, isUser = false))
+                    if (voiceOutputEnabled) onSpeak(msg)
+                    triggerAutoUpdate(update)
+                } else {
+                    val msg = "आपका JARVIS पहले से ही लेटेस्ट वर्जन पर है सर।"
+                    messages.add(ChatMessage(msg, isUser = false))
+                    if (voiceOutputEnabled) onSpeak(msg)
+                }
+                listState.animateScrollToItem(messages.size - 1)
+            }
+            return
+        }
+
+        // Check for Phase 2 Phone Automation Commands
+        val deviceReply = handleDeviceCommand(context, query)
+        if (deviceReply != null) {
+            messages.add(ChatMessage(deviceReply, isUser = false))
+            coroutineScope.launch { listState.animateScrollToItem(messages.size - 1) }
+            if (voiceOutputEnabled) onSpeak(deviceReply)
+            return
+        }
+
         if (apiKey.isBlank()) {
             showSettings = true
             Toast.makeText(context, "कृपया पहले Gemini API Key डालें", Toast.LENGTH_SHORT).show()
             return
         }
 
-        messages.add(ChatMessage(query, isUser = true))
-        inputText = ""
         isThinking = true
 
         coroutineScope.launch {
@@ -249,11 +331,28 @@ fun JarvisApp(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (isListening) "LISTENING..." else if (isThinking) "THINKING..." else "ONLINE",
-                        color = if (isListening) Color(0xFFFF6B6B) else Color(0xFF8EF7C5),
+                        if (isDownloadingUpdate) "UPDATING..." else if (isListening) "LISTENING..." else if (isThinking) "THINKING..." else "ONLINE",
+                        color = if (isListening || isDownloadingUpdate) Color(0xFFFF6B6B) else Color(0xFF8EF7C5),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    IconButton(onClick = {
+                        coroutineScope.launch {
+                            Toast.makeText(context, "अपडेट चेक कर रहा है...", Toast.LENGTH_SHORT).show()
+                            val upd = checkGitHubUpdate("")
+                            if (upd != null && upd.apkUrl.isNotBlank()) {
+                                pendingUpdate = upd
+                            } else {
+                                Toast.makeText(context, "कोई नया अपडेट नहीं है", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }) {
+                        Icon(
+                            Icons.Default.SystemUpdate,
+                            contentDescription = "Check Update",
+                            tint = if (pendingUpdate != null) Color(0xFFFFD54F) else cyan
+                        )
+                    }
                     IconButton(onClick = {
                         voiceOutputEnabled = !voiceOutputEnabled
                         if (!voiceOutputEnabled) onStopSpeak()
@@ -387,7 +486,7 @@ fun JarvisApp(
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
-                    placeholder = { Text("JARVIS से पूछें...", color = Color.Gray, fontSize = 14.sp) },
+                    placeholder = { Text("JARVIS से पूछें या कमांड दें...", color = Color.Gray, fontSize = 14.sp) },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(20.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -436,6 +535,31 @@ fun JarvisApp(
         }
     }
 
+    // 1-Click Auto Update Dialog
+    pendingUpdate?.let { update ->
+        AlertDialog(
+            onDismissRequest = { pendingUpdate = null },
+            title = { Text("🚀 नया JARVIS अपडेट उपलब्ध!", color = cyan) },
+            text = {
+                Text(
+                    "वर्जन: ${update.title}\nक्या आप अभी 1-क्लिक में नया अपडेट डाउनलोड और इंस्टॉल करना चाहते हैं?",
+                    color = Color.LightGray,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(onClick = { triggerAutoUpdate(update) }) {
+                    Text("Update Now")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUpdate = null }) {
+                    Text("बाद में", color = Color.Gray)
+                }
+            }
+        )
+    }
+
     if (showSettings) {
         var tempKey by remember { mutableStateOf(apiKey) }
         AlertDialog(
@@ -470,6 +594,175 @@ fun JarvisApp(
             }
         )
     }
+}
+
+suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContext(Dispatchers.IO) {
+    try {
+        val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build()
+        val url = "https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/releases/latest"
+        val req = Request.Builder().url(url).header("Accept", "application/vnd.github+json").build()
+        client.newCall(req).execute().use { res ->
+            if (!res.isSuccessful) return@withContext null
+            val json = JSONObject(res.body?.string() ?: "")
+            val assets = json.optJSONArray("assets") ?: return@withContext null
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                val name = asset.optString("name")
+                if (name.endsWith(".apk")) {
+                    val apkUrl = asset.optString("browser_download_url")
+                    val updatedAt = asset.optString("updated_at")
+                    val body = json.optString("body", "Latest Build")
+                    val isNew = lastInstalledAt.isBlank() || updatedAt != lastInstalledAt
+                    return@withContext UpdateInfo(isNew, body, apkUrl, updatedAt)
+                }
+            }
+            null
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+fun downloadAndInstallApk(context: Context, apkUrl: String, onDone: (Boolean) -> Unit) {
+    try {
+        val fileName = "jarvis_update.apk"
+        val destFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
+        if (destFile.exists()) destFile.delete()
+
+        val request = DownloadManager.Request(Uri.parse(apkUrl)).apply {
+            setTitle("JARVIS AI Update")
+            setDescription("Downloading latest JARVIS version...")
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, fileName)
+        }
+
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val downloadId = dm.enqueue(request)
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) ?: -1
+                if (id == downloadId) {
+                    try { context.unregisterReceiver(this) } catch (_: Exception) {}
+                    onDone(true)
+                    val apkUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", destFile)
+                    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(apkUri, "application/vnd.android.package-archive")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(installIntent)
+                }
+            }
+        }
+        ContextCompat.registerReceiver(context, receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), ContextCompat.RECEIVER_EXPORTED)
+    } catch (e: Exception) {
+        Toast.makeText(context, "अपडेट डाउनलोड एरर: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+        onDone(false)
+    }
+}
+
+fun handleDeviceCommand(context: Context, rawQuery: String): String? {
+    val q = rawQuery.lowercase(Locale.getDefault()).trim()
+
+    // 1. Flashlight / Torch Control
+    if (q.contains("torch") || q.contains("flashlight") || q.contains("टॉर्च") || q.contains("फ्लैशलाइट") || q.contains("लाइट")) {
+        val turnOn = q.contains("on") || q.contains("चालू") || q.contains("जला") || q.contains("ओपन") || q.contains("खोल")
+        val turnOff = q.contains("off") || q.contains("बंद") || q.contains("बुझा")
+        if (turnOn || turnOff) {
+            return try {
+                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val cameraId = cameraManager.cameraIdList.firstOrNull()
+                if (cameraId != null) {
+                    cameraManager.setTorchMode(cameraId, turnOn)
+                    if (turnOn) "जी लेखराम जी, टॉर्च ऑन कर दी गई है।" else "जी लेखराम जी, टॉर्च बंद कर दी गई है।"
+                } else {
+                    "माफ़ कीजिए सर, इस फोन में टॉर्च कंट्रोल उपलब्ध नहीं है।"
+                }
+            } catch (e: Exception) {
+                "टॉर्च चालू करने में समस्या आई: ${e.localizedMessage}"
+            }
+        }
+    }
+
+    // 2. Settings Shortcuts
+    if (q.contains("wifi") || q.contains("wi-fi") || q.contains("वाईफाई")) {
+        context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return "जी सर, Wi-Fi सेटिंग्स खोल रहा हूँ।"
+    }
+    if (q.contains("bluetooth") || q.contains("ब्लूटूथ")) {
+        context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return "जी सर, Bluetooth सेटिंग्स खोल रहा हूँ।"
+    }
+    if (q.contains("settings") || q.contains("सेटिंग")) {
+        context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return "जी सर, फोन की Settings खोल रहा हूँ।"
+    }
+
+    // 3. WhatsApp Direct Message
+    if ((q.contains("whatsapp") || q.contains("व्हाट्सएप")) && (q.contains("भेज") || q.contains("send") || q.contains("message") || q.contains("मैसेज"))) {
+        val digits = rawQuery.filter { it.isDigit() }
+        if (digits.length >= 10) {
+            val phone = if (digits.length == 10) "91$digits" else digits
+            val msgText = rawQuery.replace(Regex("(?i)(whatsapp|व्हाट्सएप|पर|को|मैसेज|भेजो|भेज|send|message)"), "")
+                .replace(Regex("[0-9+\\-\\s]{10,}"), "")
+                .trim()
+                .ifBlank { "नमस्ते" }
+            return try {
+                val url = "https://api.whatsapp.com/send?phone=$phone&text=${URLEncoder.encode(msgText, "UTF-8")}"
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                "जी लेखराम जी, $digits के लिए WhatsApp मैसेज तैयार कर दिया है।"
+            } catch (_: Exception) {
+                "WhatsApp खोलने में समस्या आई।"
+            }
+        }
+    }
+
+    // 4. Phone Call
+    if (q.contains("call") || q.contains("कॉल") || q.contains("फोन लगा")) {
+        val digits = rawQuery.filter { it.isDigit() }
+        if (digits.length >= 10) {
+            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$digits")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            return "जी सर, $digits पर कॉल लगा रहा हूँ।"
+        } else {
+            val intent = Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            return "जी सर, फोन डायलर खोल रहा हूँ।"
+        }
+    }
+
+    // 5. Open Popular Apps
+    val openKeywords = listOf("open", "खोलो", "खोल", "चलाओ", "ओपन")
+    if (openKeywords.any { q.contains(it) }) {
+        if (q.contains("camera") || q.contains("कैमरा")) {
+            context.startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return "जी लेखराम जी, कैमरा खोल रहा हूँ।"
+        }
+        val appPackages = mapOf(
+            listOf("youtube", "यूट्यूब") to ("YouTube" to "com.google.android.youtube"),
+            listOf("whatsapp", "व्हाट्सएप") to ("WhatsApp" to "com.whatsapp"),
+            listOf("chrome", "क्रोम", "browser") to ("Chrome" to "com.android.chrome"),
+            listOf("maps", "मैप", "नक्शा") to ("Google Maps" to "com.google.android.apps.maps"),
+            listOf("instagram", "इंस्टाग्राम") to ("Instagram" to "com.instagram.android"),
+            listOf("facebook", "फेसबुक") to ("Facebook" to "com.facebook.katana"),
+            listOf("calculator", "कैलकुलेटर") to ("Calculator" to "com.google.android.calculator")
+        )
+        for ((keys, appInfo) in appPackages) {
+            if (keys.any { q.contains(it) }) {
+                val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.second)
+                return if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launchIntent)
+                    "जी लेखराम जी, ${appInfo.first} खोल रहा हूँ।"
+                } else {
+                    "माफ़ कीजिए सर, आपके फोन में ${appInfo.first} इंस्टॉल नहीं है।"
+                }
+            }
+        }
+    }
+
+    return null
 }
 
 suspend fun findActiveModel(client: OkHttpClient, cleanKey: String): String? {
@@ -552,3 +845,4 @@ suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String
     }
     return@withContext "समस्या आई ($lastError)"
 }
+
