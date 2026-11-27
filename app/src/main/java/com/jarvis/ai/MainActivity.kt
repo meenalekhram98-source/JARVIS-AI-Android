@@ -614,6 +614,8 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
         1. If the user shares any new personal preference, habit, person, or fact: append [LEARN: short fact]
         2. If the user asks you to add a new skill, rule, behavior, or capability (e.g. "नया फीचर जोड़ो", "ये सीख लो", "अब से ऐसा करना"): append [SKILL: clear rule/capability] and confirm you have upgraded yourself immediately!
         3. If the user wants to search anything live on Google or open a web service/site to fulfill a task: append [SEARCH: search query]
+                4. For ANY phone hardware, system setting, volume, brightness, battery, storage, or Android Intent action, append:
+        [ACTION: {"type":"BATTERY"}] or {"type":"STORAGE"} or {"type":"DEVICE_INFO"} or {"type":"VOLUME","action":"up/down/mute/max","percent":70} or {"type":"BRIGHTNESS","percent":50} or {"type":"INTENT","action":"android.settings.AIRPLANE_MODE_SETTINGS","uri":"","package":"","reply":"जी लेखराम जी, सेटिंग खोल दी है।"} or {"type":"OPEN_APP","package":"com.package.name","reply":"जी सर, खोल रहा हूँ।"}
     """.trimIndent()
 
     val systemInstruction = when (mode) {
@@ -661,6 +663,14 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
                                 } catch (_: Exception) {}
                             }
                         }
+                                                val actionRegex = Regex("\\[ACTION:(.*?)\\]")
+                        actionRegex.find(reply!!)?.let {
+                            val actionJson = it.groupValues[1].trim()
+                            reply = reply!!.replace(actionRegex, "").trim()
+                            val execResult = DynamicExecutor.executeJsonAction(context, actionJson)
+                            reply = if (reply.isNullOrBlank()) execResult else "$reply\n$execResult"
+                        }
+
 
                         val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $reply").takeLast(1500)
                         prefs.edit().putString("recent_chat", updatedHistory).apply()
