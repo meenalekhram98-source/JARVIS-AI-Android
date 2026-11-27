@@ -16,6 +16,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.util.Base64
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -70,12 +72,15 @@ import java.util.concurrent.TimeUnit
 data class ChatMessage(val text: String, val isUser: Boolean)
 
 data class UpdateInfo(val available: Boolean, val title: String, val apkUrl: String, val updatedAt: String)
+
 var onSpeechFinishedCallback: (() -> Unit)? = null
+
+private const val GITHUB_OWNER = "meenalekhram98-source"
+private const val GITHUB_REPO = "JARVIS-AI-Android"
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
-    
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,8 +104,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 tts?.setLanguage(Locale.US)
             }
-            tts?.setSpeechRate(1.05f)
-            tts?.setPitch(0.95f)
+            applyVoiceProfile()
             tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {}
                 override fun onDone(utteranceId: String?) {
@@ -113,12 +117,30 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun applyVoiceProfile() {
+        val prefs = getSharedPreferences("jarvis_prefs", MODE_PRIVATE)
+        val gender = prefs.getString("voice_gender", "male") ?: "male"
+        val pitch = prefs.getFloat("voice_pitch", if (gender == "male") 0.74f else 1.22f)
+        val rate = prefs.getFloat("voice_rate", 1.03f)
+        try {
+            tts?.voices?.let { voices ->
+                val hindiVoices = voices.filter { it.locale.language == "hi" }
+                val target = if (gender == "male") {
+                    hindiVoices.firstOrNull { it.name.contains("male", true) || it.name.contains("ind-x-hid", true) || it.name.contains("ind-x-hie", true) }
+                } else {
+                    hindiVoices.firstOrNull { it.name.contains("female", true) || it.name.contains("ind-x-hia", true) || it.name.contains("ind-x-hic", true) }
+                }
+                if (target != null) tts?.voice = target
+            }
+            tts?.setPitch(pitch)
+            tts?.setSpeechRate(rate)
+        } catch (_: Exception) {}
+    }
+
     private fun speakHindi(text: String) {
         if (!isTtsReady) return
         try {
-            val prefs = getSharedPreferences("jarvis_prefs", MODE_PRIVATE)
-            tts?.setPitch(prefs.getFloat("voice_pitch", 0.95f))
-            tts?.setSpeechRate(prefs.getFloat("voice_rate", 1.05f))
+            applyVoiceProfile()
             val cleanText = text.replace("*", "").replace("#", "").trim()
             val params = Bundle()
             params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "jarvis_utt")
@@ -139,6 +161,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE) }
     var apiKey by remember { mutableStateOf(prefs.getString("gemini_api_key", "") ?: "") }
+    var githubToken by remember { mutableStateOf(prefs.getString("github_token", "") ?: "") }
     var showSettings by remember { mutableStateOf(apiKey.isBlank()) }
 
     var inputText by remember { mutableStateOf("") }
@@ -152,7 +175,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
 
     val messages = remember {
         mutableStateListOf(
-            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। अब मैं बिना किसी सेटअप के खुद नई स्किल्स और बातें सीख सकता हूँ।", isUser = false)
+            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। अब मैं सेल्फ-कोडिंग और सेल्फ-हीलिंग इंजन से लैस हूँ—मैं खुद कोड लिखकर और बग्स ठीक करके अपडेट हो सकता हूँ।", isUser = false)
         )
     }
 
@@ -278,12 +301,12 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
             return
         }
 
-        
-
         isThinking = true
         coroutineScope.launch {
             listState.animateScrollToItem(messages.size - 1)
-            val reply = askGemini(context, apiKey, query, selectedMode)
+            val reply = askGemini(context, apiKey, githubToken, query, selectedMode) { statusMsg ->
+                messages.add(ChatMessage(statusMsg, isUser = false))
+            }
             isThinking = false
             messages.add(ChatMessage(reply, isUser = false))
             listState.animateScrollToItem(messages.size - 1)
@@ -294,6 +317,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     LaunchedEffect(Unit) {
         retryQueryCallback = { q -> sendQuery(q) }
     }
+
     val speechRecognizer = remember {
         try {
             if (SpeechRecognizer.isRecognitionAvailable(context)) {
@@ -351,13 +375,11 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         else Toast.makeText(context, "माइक की परमिशन ज़रूरी है", Toast.LENGTH_SHORT).show()
     }
 
-          LaunchedEffect(Unit) {
-     onSpeechFinishedCallback = {
-         if (prefs.getBoolean("auto_listen", false) && !isListening) startVoiceRecognition()
-     }
-          } 
-
-     
+    LaunchedEffect(Unit) {
+        onSpeechFinishedCallback = {
+            if (prefs.getBoolean("auto_listen", false) && !isListening) startVoiceRecognition()
+        }
+    }
 
     val background = Color(0xFF050B16)
     val cyan = Color(0xFF45E6FF)
@@ -382,7 +404,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (isDownloadingUpdate) "UPDATING..." else if (isListening) "LISTENING..." else if (isThinking) "THINKING..." else "ONLINE",
+                        if (isDownloadingUpdate) "UPDATING..." else if (isListening) "LISTENING..." else if (isThinking) "CODING / THINKING..." else "ONLINE",
                         color = if (isListening || isDownloadingUpdate) Color(0xFFFF6B6B) else Color(0xFF8EF7C5),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -410,127 +432,18 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
             }
 
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("JARVIS" to "🤖 AI Brain", "STUDY" to "📚 Study", "TRANSLATOR" to "🌐 Translate").forEach { (mode, label) ->
+                listOf("JARVIS" to "🤖 AI Brain", "CODE" to "💻 Self-Code", "STUDY" to "📚 Study").forEach { (mode, label) ->
                     val isSelected = selectedMode == mode
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .background(if (isSelected) cyan.copy(alpha = 0.25f) else Color(0xFF0D1B2A), RoundedCornerShape(12.dp))
                             .border(1.dp, if (isSelected) cyan else Color(0xFF1E3A5F), RoundedCornerShape(12.dp))
-                            .clickable { selectedMode = mode }
-                            .padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(label, color = if (isSelected) cyan else Color.LightGray, fontSize = 12.sp)
-                    }
-                }
-            }
-
-            Box(modifier = Modifier.fillMaxWidth().height(105.dp), contentAlignment = Alignment.Center) {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .scale(pulseScale)
-                        .background(Brush.radialGradient(listOf(if (isListening) Color(0x88FF5252) else Color(0x8845E6FF), Color.Transparent)), CircleShape)
-                        .clickable {
-                            if (isListening) {
-                                try { speechRecognizer?.stopListening() } catch (_: Exception) {}
-                                isListening = false
-                            } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                startVoiceRecognition()
-                            } else {
-                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("◉", color = if (isListening) Color(0xFFFF6B6B) else cyan, fontSize = 52.sp)
-                }
-            }
-
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(messages) { msg ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (msg.isUser) Arrangement.End else Arrangement.Start) {
-                        Box(
-                            modifier = Modifier
-                                .widthIn(max = 290.dp)
-                                .background(if (msg.isUser) Color(0xFF087E9B) else Color(0xFF10243A), RoundedCornerShape(16.dp))
-                                .border(1.dp, if (msg.isUser) cyan.copy(alpha = 0.5f) else Color(0xFF1E3A5F), RoundedCornerShape(16.dp))
-                                .padding(12.dp)
-                        ) {
-                            Text(text = msg.text, color = Color.White, fontSize = 14.sp)
-                        }
-                    }
-                }
-            }
-
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    placeholder = { Text("JARVIS से पूछें या नई स्किल सिखाएं...", color = Color.Gray, fontSize = 14.sp) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = cyan, unfocusedBorderColor = Color(0xFF1E3A5F), focusedTextColor = Color.White, unfocusedTextColor = Color.White),
-                    singleLine = true
-                )
-                IconButton(
-                    onClick = {
-                        if (isListening) {
-                            try { speechRecognizer?.stopListening() } catch (_: Exception) {}
-                            isListening = false
-                        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            startVoiceRecognition()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
-                    modifier = Modifier.size(48.dp).background(if (isListening) Color(0xFFD32F2F) else Color(0xFF10243A), CircleShape).border(1.dp, cyan, CircleShape)
-                ) {
-                    Icon(if (isListening) Icons.Default.Stop else Icons.Default.Mic, contentDescription = "Mic", tint = Color.White)
-                }
-                IconButton(
-                    onClick = { sendQuery(inputText) },
-                    modifier = Modifier.size(48.dp).background(Color(0xFF087E9B), CircleShape)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White)
-                }
-        
-        }
-    }
-
-    if (showSettings) {
-        var tempKey by remember { mutableStateOf(apiKey) }
-        AlertDialog(
-            onDismissRequest = { if (apiKey.isNotBlank()) showSettings = false },
-            title = { Text("JARVIS Brain Setup", color = cyan) },
-            text = {
-                Column {
-                    Text("अपनी मुफ्त Google Gemini API Key यहाँ पेस्ट करें (aistudio.google.com से बनाएं):", fontSize = 13.sp, color = Color.LightGray)
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(value = tempKey, onValueChange = { tempKey = it }, label = { Text("Gemini API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    apiKey = tempKey.trim()
-                    prefs.edit().putString("gemini_api_key", apiKey).apply()
-                    showSettings = false
-                    Toast.makeText(context, "API Key सेव हो गई!", Toast.LENGTH_SHORT).show()
-                }) { Text("Save") }
-            }
-        )
-    }
-}
-}
+                            .clickable { selectedMode
 suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContext(Dispatchers.IO) {
     try {
         val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build()
-        val req = Request.Builder().url("https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/releases/latest").header("Accept", "application/vnd.github+json").build()
+        val req = Request.Builder().url("https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest").header("Accept", "application/vnd.github+json").build()
         client.newCall(req).execute().use { res ->
             if (!res.isSuccessful) return@withContext null
             val json = JSONObject(res.body?.string() ?: "")
@@ -581,139 +494,307 @@ fun downloadAndInstallApk(context: Context, apkUrl: String, onDone: (Boolean) ->
     }
 }
 
-suspend fun findActiveModel(client: OkHttpClient, cleanKey: String): String? {
-    return try {
-        val req = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models?key=$cleanKey").get().build()
-        client.newCall(req).execute().use { res ->
-            if (!res.isSuccessful) return null
-            val models = JSONObject(res.body?.string() ?: "").optJSONArray("models") ?: return null
-            val validModels = mutableListOf<String>()
-            for (i in 0 until models.length()) {
-                val m = models.optJSONObject(i) ?: continue
-                val name = m.optString("name").removePrefix("models/")
-                val methods = m.optJSONArray("supportedGenerationMethods")?.toString() ?: ""
-                if (methods.contains("generateContent") && name.contains("gemini") && !name.contains("embedding") && !name.contains("image")) {
-                    validModels.add(name)
-                }
-            }
-            validModels.firstOrNull { it.contains("flash") } ?: validModels.firstOrNull()
+fun isBalancedCode(code: String): Boolean {
+    var curly = 0
+    var round = 0
+    var inStr = false
+    var prev = ' '
+    for (c in code) {
+        if (c == '"' && prev != '\\') inStr = !inStr
+        if (!inStr) {
+            if (c == '{') curly++ else if (c == '}') curly--
+            if (c == '(') round++ else if (c == ')') round--
+            if (curly < 0 || round < 0) return false
         }
-    } catch (_: Exception) { null }
+        prev = c
+    }
+    return curly == 0 && round == 0 && code.contains("package com.jarvis.ai")
 }
 
-suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mode: String): String = withContext(Dispatchers.IO) {
+suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, prompt: String): String? = withContext(Dispatchers.IO) {
     val cleanKey = apiKey.trim()
-    val prefs = context.getSharedPreferences("jarvis_memory", Context.MODE_PRIVATE)
+    if (cleanKey.isNotBlank()) {
+        for (model in listOf("gemini-2.5-flash", "gemini-2.0-flash")) {
+            try {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
+                val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                val req = Request.Builder().url(url).post(body.toString().toRequestBody("application/json".toMediaType())).build()
+                client.newCall(req).execute().use { res ->
+                    if (res.isSuccessful) {
+                        val txt = JSONObject(res.body?.string() ?: "").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
+                        if (!txt.isNullOrBlank()) return@withContext txt.removePrefix("```kotlin").removePrefix("```").removeSuffix("```").trim()
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+    null
+}
+
+suspend fun selfCodeAndHealGitHub(
+    apiKey: String,
+    githubToken: String,
+    filePath: String,
+    instruction: String,
+    onProgress: suspend (String) -> Unit
+): String = withContext(Dispatchers.IO) {
+    val token = githubToken.trim()
+    if (token.isBlank()) return@withContext "सर, सेल्फ-कोडिंग के लिए पहले Settings (⚙️) में अपना GitHub Token डाल दें।"
+    val client = OkHttpClient.Builder().connectTimeout(45, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
+
+    try {
+        onProgress("🔍 GitHub से $filePath पढ़ रहा हूँ...")
+        val fileUrl = "[https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/contents/$filePath](https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/contents/$filePath)"
+        val getReq = Request.Builder().url(fileUrl)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/vnd.github+json")
+            .build()
+        var currentCode = ""
+        var currentSha = ""
+        client.newCall(getReq).execute().use { res ->
+            val raw = res.body?.string() ?: ""
+            if (!res.isSuccessful) return@withContext "GitHub फाइल पढ़ने में त्रुटि (${res.code}): $raw"
+            val json = JSONObject(raw)
+            currentSha = json.optString("sha")
+            val encoded = json.optString("content").replace("\n", "")
+            currentCode = String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8)
+        }
+
+        onProgress("🧠 नया और एरर-फ्री कोड लिख रहा हूँ...")
+        val codePrompt = """
+            You are an expert Android Kotlin & Jetpack Compose engineer maintaining the JARVIS AI Android app.
+            Modify the following file strictly according to the user's instruction.
+            CRITICAL RULES:
+            - Output ONLY the complete, valid Kotlin source code for the entire file (no markdown fences, no explanations).
+            - Ensure every opening `{` and `(` has a matching closing `}` and `)`.
+            - Keep all existing working features, imports, and signatures intact unless asked to change them.
+            
+            Instruction: $instruction
+            
+            Current File ($filePath):
+            $currentCode
+        """.trimIndent()
+
+        var newCode = callLLMCodeWriter(client, apiKey, codePrompt)
+            ?: return@withContext "कोड जेनरेट नहीं हो सका—कृपया Gemini API Key जांचें।"
+
+        if (!isBalancedCode(newCode)) {
+            onProgress("⚠️ ब्रैकेट असंतुलन मिला, कोड को ऑटो-रिपेयर कर रहा हूँ...")
+            newCode = callLLMCodeWriter(client, apiKey, "Fix any unmatched curly braces `{}` or parentheses `()` in this Kotlin file and return ONLY the complete valid Kotlin code:\n\n$newCode") ?: ""
+            if (!isBalancedCode(newCode)) {
+                return@withContext "सुरक्षा कारणों से कमिट रोका गया: जेनरेट किए गए कोड में ब्रैकेट बैलेंस सही नहीं था।"
+            }
+        }
+
+        onProgress("🚀 कोड को GitHub पर पुश कर रहा हूँ...")
+        val putBody = JSONObject().apply {
+            put("message", "JARVIS Self-Code: ${instruction.take(50)}")
+            put("content", Base64.encodeToString(newCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+            put("sha", currentSha)
+            put("branch", "main")
+        }
+        val putReq = Request.Builder().url(fileUrl)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/vnd.github+json")
+            .put(putBody.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        client.newCall(putReq).execute().use { res ->
+            if (!res.isSuccessful) return@withContext "GitHub कमिट फेल हुआ (${res.code}): ${res.body?.string()}"
+        }
+
+        onProgress("⚙️ GitHub Actions बिल्ड की निगरानी कर रहा हूँ (लगभग 90 सेकंड)...")
+        delay(85_000)
+
+        val runsUrl = "[https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/runs?per_page=1](https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/runs?per_page=1)"
+        val runsReq = Request.Builder().url(runsUrl).header("Authorization", "Bearer $token").build()
+        client.newCall(runsReq).execute().use { res ->
+            val runsJson = JSONObject(res.body?.string() ?: "{}")
+            val latestRun = runsJson.optJSONArray("workflow_runs")?.optJSONObject(0)
+            val conclusion = latestRun?.optString("conclusion") ?: ""
+            if (conclusion == "failure") {
+                onProgress("🛠️ बिल्ड में एरर आया है—मैं खुद इसे पिछले स्टेबल वर्जन पर रीस्टोर कर रहा हूँ...")
+                val rollbackBody = JSONObject().apply {
+                    put("message", "JARVIS Auto-Rollback to last stable build")
+                    put("content", Base64.encodeToString(currentCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+                    put("branch", "main")
+                }
+                client.newCall(getReq).execute().use { latestFileRes ->
+                    val latestSha = JSONObject(latestFileRes.body?.string() ?: "{}").optString("sha")
+                    rollbackBody.put("sha", latestSha)
+                }
+                val rbReq = Request.Builder().url(fileUrl).header("Authorization", "Bearer $token").put(rollbackBody.toString().toRequestBody("application/json".toMediaType())).build()
+                client.newCall(rbReq).execute().close()
+                return@withContext "नए कोड में कंपाइल एरर आया था, इसलिए मैंने खुद ही पिछले स्टेबल वर्जन पर सेफ रोलबैक कर दिया है सर।"
+            }
+        }
+
+        return@withContext "✅ कोडिंग और बिल्ड सफल रहा लेखराम जी! अब बस 'अपडेट चेक करो' बोलें या ऊपर अपडेट आइकन दबाएं, नया APK इंस्टॉल हो जाएगा।"
+    } catch (e: Exception) {
+        return@withContext "सेल्फ-कोडिंग में त्रुटि आई: ${e.localizedMessage}"
+    }
+}
+
+private fun applyAllTags(
+    context: Context,
+    prefs: android.content.SharedPreferences,
+    rawReply: String,
+    learnedFacts: String,
+    learnedSkills: String
+): Pair<String, Pair<String, String>?> {
+    var reply = rawReply
+    var selfCodeTask: Pair<String, String>? = null
+
+    Regex("\\[LEARN:(.*?)\\]").find(reply)?.let {
+        val updatedFacts = (learnedFacts + "\n- " + it.groupValues[1].trim()).takeLast(2500).trim()
+        prefs.edit().putString("learned_facts", updatedFacts).apply()
+        reply = reply.replace(Regex("\\[LEARN:.*?\\]"), "").trim()
+    }
+    Regex("\\[SKILL:(.*?)\\]").find(reply)?.let {
+        val updatedSkills = (learnedSkills + "\n- " + it.groupValues[1].trim()).takeLast(2500).trim()
+        prefs.edit().putString("learned_skills", updatedSkills).apply()
+        reply = reply.replace(Regex("\\[SKILL:.*?\\]"), "").trim()
+    }
+    Regex("\\[VOICE:(.*?)\\]").find(reply)?.let {
+        val v = it.groupValues[1].trim().lowercase()
+        val ed = prefs.edit()
+        when {
+            v.contains("male") || v.contains("bhari") || v.contains("purush") -> {
+                ed.putString("voice_gender", "male")
+                ed.putFloat("voice_pitch", 0.74f)
+            }
+            v.contains("female") || v.contains("ladki") || v.contains("mahila") -> {
+                ed.putString("voice_gender", "female")
+                ed.putFloat("voice_pitch", 1.22f)
+            }
+            v.contains("fast") || v.contains("tez") -> ed.putFloat("voice_rate", 1.25f)
+            else -> {
+                ed.putFloat("voice_pitch", 0.95f)
+                ed.putFloat("voice_rate", 1.03f)
+            }
+        }
+        ed.apply()
+        reply = reply.replace(Regex("\\[VOICE:.*?\\]"), "").trim()
+    }
+    Regex("\\[AUTOLISTEN:(.*?)\\]").find(reply)?.let {
+        val on = it.groupValues[1].trim().lowercase() == "on"
+        prefs.edit().putBoolean("auto_listen", on).apply()
+        reply = reply.replace(Regex("\\[AUTOLISTEN:.*?\\]"), "").trim()
+    }
+    Regex("\\[SEARCH:(.*?)\\]").find(reply)?.let {
+        val q = it.groupValues[1].trim()
+        reply = reply.replace(Regex("\\[SEARCH:.*?\\]"), "").trim()
+        try {
+            val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("[https://www.google.com/search?q=$](https://www.google.com/search?q=$){URLEncoder.encode(q, "UTF-8")}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(searchIntent)
+        } catch (_: Exception) {}
+    }
+    Regex("\\[ACTION:(.*?)\\]").find(reply)?.let {
+        val actionJson = it.groupValues[1].trim()
+        reply = reply.replace(Regex("\\[ACTION:.*?\\]"), "").trim()
+        val execResult = try { DynamicExecutor.executeJsonAction(context, actionJson) } catch (e: Exception) { "Action error: ${e.localizedMessage}" }
+        reply = if (reply.isBlank()) execResult else "$reply\n$execResult"
+    }
+    Regex("\\[SELFCODE:(.*?)\\]").find(reply)?.let {
+        val jsonStr = it.groupValues[1].trim()
+        reply = reply.replace(Regex("\\[SELFCODE:.*?\\]"), "").trim()
+        try {
+            val obj = JSONObject(jsonStr)
+            val file = obj.optString("file", "app/src/main/java/com/jarvis/ai/MainActivity.kt")
+            val inst = obj.optString("instruction", "")
+            if (inst.isNotBlank()) selfCodeTask = Pair(file, inst)
+        } catch (_: Exception) {}
+    }
+
+    return Pair(reply, selfCodeTask)
+}
+
+suspend fun askGemini(
+    context: Context,
+    apiKey: String,
+    githubToken: String,
+    userMessage: String,
+    mode: String,
+    onProgress: suspend (String) -> Unit
+): String = withContext(Dispatchers.IO) {
+    val cleanKey = apiKey.trim()
+    val prefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
     val learnedFacts = prefs.getString("learned_facts", "") ?: ""
     val learnedSkills = prefs.getString("learned_skills", "") ?: ""
     val recentHistory = prefs.getString("recent_chat", "") ?: ""
 
-    val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
-           val modelsToTry = if (cleanKey.isBlank()) emptyList() else listOf(
-
+    val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(35, TimeUnit.SECONDS).build()
+    val modelsToTry = if (cleanKey.isBlank()) emptyList() else listOf(
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
         "gemini-2.0-flash-lite"
-    )      
-
+    )
 
     val ownerIdentity = """
         Your creator and owner (malik) is Lekhram Meena (लेखराम मीना). Always address him respectfully as 'लेखराम जी' or 'सर'.
-        You are an INSTANT SELF-EVOLVING, self-learning AI assistant.
+        You are a FULL-STACK SELF-CODING & SELF-HEALING AI assistant. You know all programming languages (Kotlin, Jetpack Compose, Java, Python, C++, JavaScript, HTML/CSS, SQL, Bash) and can modify your own source code on GitHub.
         
-        Learned facts & personal memory about Lekhram ji:
+        Learned facts about Lekhram ji:
         $learnedFacts
         
-        Custom skills & abilities you have taught yourself:
+        Custom skills & abilities:
         $learnedSkills
         
-        Recent conversation context:
+        Recent chat:
         $recentHistory
         
-        SELF-EVOLUTION & ACTION TAGS (Append at the very end of your reply when needed; never mention tags aloud):
-        1. If the user shares any new personal preference, habit, person, or fact: append [LEARN: short fact]
-        2. If the user asks you to add a new skill, rule, behavior, or capability (e.g. "नया फीचर जोड़ो", "ये सीख लो", "अब से ऐसा करना"): append [SKILL: clear rule/capability] and confirm you have upgraded yourself immediately!
-        3. If the user wants to search anything live on Google or open a web service/site to fulfill a task: append [SEARCH: search query]
-                4. For ANY phone hardware, system setting, volume, brightness, battery, storage, or Android Intent action, append:
-        [ACTION: {"type":"BATTERY"}] or {"type":"STORAGE"} or {"type":"DEVICE_INFO"} or {"type":"VOLUME","action":"up/down/mute/max","percent":70} or {"type":"BRIGHTNESS","percent":50} or {"type":"INTENT","action":"android.settings.AIRPLANE_MODE_SETTINGS","uri":"","package":"","reply":"जी लेखराम जी, सेटिंग खोल दी है।"} or {"type":"OPEN_APP","package":"com.package.name","reply":"जी सर, खोल रहा हूँ।"}
-    
-    5. If the user asks to change your voice, pitch, speed, or hands-free/auto-listen mode: append [VOICE: male], [VOICE: female], [VOICE: fast], [VOICE: normal], [AUTOLISTEN: on], or [AUTOLISTEN: off] at the end.
-""".trimIndent()
+        ACTION & SELF-CODING TAGS (Append at the very end when triggered; never speak tags aloud):
+        1. Personal memory: [LEARN: short fact]
+        2. New behavioral skill/rule: [SKILL: clear rule]
+        3. Google search: [SEARCH: query]
+        4. Device hardware/settings: [ACTION: {"type":"BATTERY"}] or {"type":"STORAGE"} or {"type":"DEVICE_INFO"} or {"type":"VOLUME","action":"up/down/mute/max","percent":70} or {"type":"BRIGHTNESS","percent":50} or {"type":"INTENT","action":"android.settings.AIRPLANE_MODE_SETTINGS","uri":"","package":"","reply":"जी लेखराम जी, सेटिंग खोल दी है।"} or {"type":"OPEN_APP","package":"com.package.name","reply":"जी सर, खोल रहा हूँ।"}
+        5. Voice/Auto-listen control: [VOICE: male], [VOICE: female], [VOICE: fast], [VOICE: normal], [AUTOLISTEN: on], or [AUTOLISTEN: off]
+        6. SELF-CODING & SELF-HEALING ON GITHUB: Whenever Lekhram ji asks you to code a new app feature, fix your own bug/error, update your UI, or modify your Kotlin files on GitHub, append:
+        [SELFCODE: {"file":"app/src/main/java/com/jarvis/ai/MainActivity.kt","instruction":"exact technical description of code change"}]
+    """.trimIndent()
 
-        val systemInstruction = when (mode) {
+    val systemInstruction = when (mode) {
+        "CODE" -> "$ownerIdentity You are JARVIS in MASTER SOFTWARE ARCHITECT MODE. Write clean, complete, production-grade code in any language requested, and use [SELFCODE: ...] whenever upgrading yourself."
         "STUDY" -> "$ownerIdentity You are JARVIS in STUDY MODE. Explain concepts clearly in simple Hindi/Hinglish with bullet points and examples."
-        "TRANSLATOR" -> "$ownerIdentity You are JARVIS in TRANSLATOR MODE. Translate user input cleanly between Hindi and English without extra commentary."
-        else -> "$ownerIdentity You are JARVIS, a smart, loyal, and concise personal AI assistant speaking natural Hindi/Hinglish."
+        else -> "$ownerIdentity You are JARVIS, a smart, loyal personal AI assistant speaking natural Hindi/Hinglish."
     }
 
     var lastError = ""
     for (model in modelsToTry) {
         try {
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
+            val url = "[https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey](https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey)"
             val jsonBody = JSONObject().apply {
-                if (model.startsWith("gemma")) {
-                    put("contents", JSONArray().put(JSONObject().apply {
-                        put("parts", JSONArray().put(JSONObject().put("text", "$systemInstruction\n\nUser: $userMessage")))
-                    }))
-                } else {
-                    put("system_instruction", JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))) })
-                    put("contents", JSONArray().put(JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", userMessage))) }))
-                }
+                put("system_instruction", JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))) })
+                put("contents", JSONArray().put(JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", userMessage))) }))
             }
             val request = Request.Builder().url(url).post(jsonBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(request).execute().use { response ->
                 val responseText = response.body?.string() ?: ""
                 if (response.isSuccessful) {
-                                        var reply = JSONObject(responseText).optJSONArray("candidates")?.optJSONObject(0)
+                    val rawReply = JSONObject(responseText).optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
-                    if (!reply.isNullOrBlank()) {
-                        val learnRegex = Regex("\\[LEARN:(.*?)\\]")
-                        learnRegex.find(reply!!)?.let {
-                            val updatedFacts = (learnedFacts + "\n- " + it.groupValues[1].trim()).trim()
-                            prefs.edit().putString("learned_facts", updatedFacts).apply()
-                            reply = reply!!.replace(learnRegex, "").trim()
-                        }
-                        val skillRegex = Regex("\\[SKILL:(.*?)\\]")
+                    if (!rawReply.isNullOrBlank()) {
+                        val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
+                        val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(1500)
+                        prefs.edit().putString("recent_chat", updatedHistory).apply()
 
-
-                        skillRegex.find(reply!!)?.let {
-                            val updatedSkills = (learnedSkills + "\n- " + it.groupValues[1].trim()).takeLast(2500)
-                            prefs.edit().putString("learned_skills", updatedSkills).apply()
-                            reply = reply!!.replace(skillRegex, "").trim()
-                        }
-
-                        val searchRegex = Regex("\\[SEARCH:(.*?)\\]")
-                        searchRegex.find(reply!!)?.let {
-                            val queryToSearch = it.groupValues[1].trim()
-                            reply = reply!!.replace(searchRegex, "").trim()
-                            withContext(Dispatchers.Main) {
-                                try {
-                                    val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(queryToSearch, "UTF-8")}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    context.startActivity(searchIntent)
-                                } catch (_: Exception) {}
+                        if (selfCodeTask != null) {
+                            withContext(Dispatchers.Main) { onProgress(cleanReply) }
+                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, selfCodeTask.first, selfCodeTask.second) { prog ->
+                                withContext(Dispatchers.Main) { onProgress(prog) }
                             }
                         }
-                                                val actionRegex = Regex("\\[ACTION:(.*?)\\]")
-                        actionRegex.find(reply!!)?.let {
-                            val actionJson = it.groupValues[1].trim()
-                            reply = reply!!.replace(actionRegex, "").trim()
-                            val execResult = DynamicExecutor.executeJsonAction(context, actionJson)
-                            reply = if (reply.isNullOrBlank()) execResult else "$reply\n$execResult"
-                        }
-
-
-                        val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $reply").takeLast(1500)
-                        prefs.edit().putString("recent_chat", updatedHistory).apply()
-                        return@withContext reply!!
+                        return@withContext cleanReply
                     }
                 } else {
-                    lastError = "Error ${response.code}: ${try { JSONObject(responseText).optJSONObject("error")?.optString("message") ?: responseText } catch (_: Exception) { responseText }}"
+                    lastError = "HTTP ${response.code}"
                 }
             }
-        } catch (e: Exception) { lastError = e.localizedMessage ?: "Network error" }
+        } catch (e: Exception) {
+            lastError = e.localizedMessage ?: "Network error"
+        }
     }
-       // Keyless Free Cloud Fallback (बिना API Key और बिना लिमिट के चलेगा)
+
     try {
         val fallbackBody = JSONObject().apply {
             put("messages", JSONArray().apply {
@@ -723,57 +804,34 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
             put("model", "openai")
         }
         val fallbackReq = Request.Builder()
-            .url("https://text.pollinations.ai/openai")
+            .url("[https://text.pollinations.ai/openai](https://text.pollinations.ai/openai)")
             .post(fallbackBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
         client.newCall(fallbackReq).execute().use { res ->
             val resText = res.body?.string() ?: ""
             if (res.isSuccessful && resText.isNotBlank()) {
-                var reply = JSONObject(resText).optJSONArray("choices")?.optJSONObject(0)
+                val rawReply = JSONObject(resText).optJSONArray("choices")?.optJSONObject(0)
                     ?.optJSONObject("message")?.optString("content")
-                if (!reply.isNullOrBlank()) {
-                    val learnRegex = Regex("\\[LEARN:(.*?)\\]")
-                    learnRegex.find(reply!!)?.let {
-                        val updatedFacts = (learnedFacts + "\n- " + it.groupValues[1].trim()).trim()
-                        prefs.edit().putString("learned_facts", updatedFacts).apply()
-                        reply = reply!!.replace(learnRegex, "").trim()
-                    }
-                    val skillRegex = Regex("\\[SKILL:(.*?)\\]")
-                    skillRegex.find(reply!!)?.let {
-                        val updatedSkills = (learnedSkills + "\n- " + it.groupValues[1].trim()).trim()
-                        prefs.edit().putString("learned_skills", updatedSkills).apply()
-                        reply = reply!!.replace(skillRegex, "").trim()
-                    }
-                                        Regex("\\[VOICE:(.*?)\\]").find(reply!!)?.let {
-                        val v = it.groupValues[1].trim().lowercase()
-                        val ed = prefs.edit()
-                        when {
-                            v.contains("male") || v.contains("bhari") -> ed.putFloat("voice_pitch", 0.78f)
-                            v.contains("female") || v.contains("ladki") -> ed.putFloat("voice_pitch", 1.25f)
-                            v.contains("fast") || v.contains("tez") -> ed.putFloat("voice_rate", 1.25f)
-                            else -> { ed.putFloat("voice_pitch", 0.95f); ed.putFloat("voice_rate", 1.05f) }
-                        }
-                        ed.apply()
-                        reply = reply!!.replace(Regex("\\[VOICE:.*?\\]"), "").trim()
-                    }
-                    Regex("\\[AUTOLISTEN:(.*?)\\]").find(reply!!)?.let {
-                        val on = it.groupValues[1].trim().lowercase() == "on"
-                        prefs.edit().putBoolean("auto_listen", on).apply()
-                        reply = reply!!.replace(Regex("\\[AUTOLISTEN:.*?\\]"), "").trim()
-                    }
-
-                    val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $reply").takeLast(1500)
+                if (!rawReply.isNullOrBlank()) {
+                    val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
+                    val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(1500)
                     prefs.edit().putString("recent_chat", updatedHistory).apply()
-                    return@withContext reply!!
+
+                    if (selfCodeTask != null) {
+                        withContext(Dispatchers.Main) { onProgress(cleanReply) }
+                        return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, selfCodeTask.first, selfCodeTask.second) { prog ->
+                            withContext(Dispatchers.Main) { onProgress(prog) }
+                        }
+                    }
+                    return@withContext cleanReply
                 }
+            } else {
+                lastError = if (lastError.isBlank()) "Fallback HTTP ${res.code}" else "$lastError | Fallback ${res.code}"
             }
         }
     } catch (e: Exception) {
-        lastError = e.message ?: lastError
+        lastError = if (lastError.isBlank()) (e.localizedMessage ?: "Connection failed") else "$lastError | ${e.localizedMessage}"
     }
 
-    return@withContext "समस्या आई ($lastError)"
-
+    return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" }})"
 }
-
-
