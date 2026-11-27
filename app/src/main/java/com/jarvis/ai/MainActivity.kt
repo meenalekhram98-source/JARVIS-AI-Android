@@ -548,7 +548,7 @@ suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContex
         }
     } catch (_: Exception) { null }
 }
-
+}
 fun downloadAndInstallApk(context: Context, apkUrl: String, onDone: (Boolean) -> Unit) {
     try {
         val destFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "jarvis_update.apk")
