@@ -594,14 +594,12 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
     val recentHistory = prefs.getString("recent_chat", "") ?: ""
 
     val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
-            val modelsToTry = listOf(
+          val modelsToTry = listOf(
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-8b"
-    )
+        "gemini-2.0-flash-lite"
+    )      
 
 
     val ownerIdentity = """
@@ -697,5 +695,47 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
             }
         } catch (e: Exception) { lastError = e.localizedMessage ?: "Network error" }
     }
+       // Keyless Free Cloud Fallback (बिना API Key और बिना लिमिट के चलेगा)
+    try {
+        val fallbackBody = JSONObject().apply {
+            put("messages", JSONArray().apply {
+                put(JSONObject().put("role", "system").put("content", systemInstruction))
+                put(JSONObject().put("role", "user").put("content", userMessage))
+            })
+            put("model", "openai")
+        }
+        val fallbackReq = Request.Builder()
+            .url("https://text.pollinations.ai/openai")
+            .post(fallbackBody.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        client.newCall(fallbackReq).execute().use { res ->
+            val resText = res.body?.string() ?: ""
+            if (res.isSuccessful && resText.isNotBlank()) {
+                var reply = JSONObject(resText).optJSONArray("choices")?.optJSONObject(0)
+                    ?.optJSONObject("message")?.optString("content")
+                if (!reply.isNullOrBlank()) {
+                    val learnRegex = Regex("\\[LEARN:(.*?)\\]")
+                    learnRegex.find(reply!!)?.let {
+                        val updatedFacts = (learnedFacts + "\n- " + it.groupValues[1].trim()).trim()
+                        prefs.edit().putString("learned_facts", updatedFacts).apply()
+                        reply = reply!!.replace(learnRegex, "").trim()
+                    }
+                    val skillRegex = Regex("\\[SKILL:(.*?)\\]")
+                    skillRegex.find(reply!!)?.let {
+                        val updatedSkills = (learnedSkills + "\n- " + it.groupValues[1].trim()).trim()
+                        prefs.edit().putString("learned_skills", updatedSkills).apply()
+                        reply = reply!!.replace(skillRegex, "").trim()
+                    }
+                    val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $reply").takeLast(1500)
+                    prefs.edit().putString("recent_chat", updatedHistory).apply()
+                    return@withContext reply!!
+                }
+            }
+        }
+    } catch (e: Exception) {
+        lastError = e.message ?: lastError
+    }
+
     return@withContext "समस्या आई ($lastError)"
+ 
 }
