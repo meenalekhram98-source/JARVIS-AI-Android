@@ -707,7 +707,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, currentCode:
         updated
     } catch (_: Exception) { null }
 }
-
+}
 
 suspend fun selfCodeAndHealGitHub(
     apiKey: String,
