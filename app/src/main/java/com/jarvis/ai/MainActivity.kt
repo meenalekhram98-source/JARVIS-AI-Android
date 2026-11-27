@@ -380,7 +380,6 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
             if (prefs.getBoolean("auto_listen", false) && !isListening) startVoiceRecognition()
         }
     }
-
     val background = Color(0xFF050B16)
     val cyan = Color(0xFF45E6FF)
 
@@ -431,7 +430,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                 }
             }
 
-                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("JARVIS" to "🤖 AI Brain", "CODE" to "💻 Self-Code", "STUDY" to "📚 Study").forEach { (mode, label) ->
                     val isSelected = selectedMode == mode
                     Box(
@@ -629,73 +628,6 @@ fun isBalancedCode(code: String): Boolean {
     return curly == 0 && round == 0 && code.contains("package com.jarvis.ai")
 }
 
-suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, filePath: String, currentCode: String, instruction: String): String? = withContext(Dispatchers.IO) {
-
-    val cleanKey = apiKey.trim()
-    val prompt = """
-        You are an expert Kotlin & Jetpack Compose engineer modifying `MainActivity.kt` for an Android app.
-        Task: $instruction
-
-        Rules:
-        1. Return ONLY a JSON array of exact search-and-replace blocks to apply to the existing file.
-        2. Format: [{"search": "exact existing lines", "replace": "updated lines with new feature"}]
-        3. Keep "search" unique and exact so it matches the current code cleanly. Include any needed imports in a separate block at the top.
-        4. Output raw valid JSON array ONLY. No markdown fences, no explanation.
-
-        Current Code:
-        $currentCode
-    """.trimIndent()
-
-    var rawOut: String? = null
-
-    if (cleanKey.isNotBlank()) {
-        for (model in listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) {
-            try {
-                val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
-                val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                val req = Request.Builder().url(url).post(body.toString().toRequestBody("application/json".toMediaType())).build()
-                client.newCall(req).execute().use { res ->
-                    if (res.isSuccessful) {
-                        val txt = JSONObject(res.body?.string() ?: "{}").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "")
-                        if (!txt.isNullOrBlank()) {
-                            rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
-                        }
-                    }
-                }
-                if (rawOut != null) break
-            } catch (_: Exception) {}
-        }
-    }
-
-    if (rawOut == null) {
-        try {
-            val fbBody = JSONObject().apply {
-                put("messages", JSONArray().apply {
-                    put(JSONObject().put("role", "system").put("content", "You are an expert Kotlin Android developer. Output ONLY raw valid JSON array of search/replace patches."))
-                    put(JSONObject().put("role", "user").put("content", prompt))
-                })
-                put("model", "openai")
-            }
-            val fbReq = Request.Builder()
-                .url("https://text.pollinations.ai/openai")
-                .post(fbBody.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-            client.newCall(fbReq).execute().use { res ->
-                if (res.isSuccessful) {
-                    val resText = res.body?.string() ?: "{}"
-                    val txt = JSONObject(resText).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "")
-                    if (!txt.isNullOrBlank()) {
-                        rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-    }
-
-    if (rawOut == null) return@withContext null
-    try {
-        val patches = JSONArray(rawOut)
-        if (patches.length() == 0) return@withContext null
 suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, prompt: String): String? = withContext(Dispatchers.IO) {
     val cleanKey = apiKey.trim()
     var rawOut: String? = null
@@ -746,9 +678,6 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, prompt: Stri
 
     rawOut
 }
-
-
-
 suspend fun selfCodeAndHealGitHub(
     apiKey: String,
     githubToken: String,
@@ -904,8 +833,7 @@ private fun applyAllTags(
         val q = it.groupValues[1].trim()
         reply = reply.replace(Regex("\\[SEARCH:.*?\\]"), "").trim()
         try {
-                       val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(q, "UTF-8")}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
+            val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(q, "UTF-8")}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(searchIntent)
         } catch (_: Exception) {}
     }
@@ -1027,7 +955,6 @@ suspend fun askGemini(
         }
         val fallbackReq = Request.Builder()
             .url("https://text.pollinations.ai/openai")
-
             .post(fallbackBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
         client.newCall(fallbackReq).execute().use { res ->
