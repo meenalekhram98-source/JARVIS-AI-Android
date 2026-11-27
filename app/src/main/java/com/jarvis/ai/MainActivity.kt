@@ -431,7 +431,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                 }
             }
 
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("JARVIS" to "🤖 AI Brain", "CODE" to "💻 Self-Code", "STUDY" to "📚 Study").forEach { (mode, label) ->
                     val isSelected = selectedMode == mode
                     Box(
@@ -439,7 +439,125 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                             .weight(1f)
                             .background(if (isSelected) cyan.copy(alpha = 0.25f) else Color(0xFF0D1B2A), RoundedCornerShape(12.dp))
                             .border(1.dp, if (isSelected) cyan else Color(0xFF1E3A5F), RoundedCornerShape(12.dp))
-                            .clickable { selectedMode
+                            .clickable { selectedMode = mode }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(label, color = if (isSelected) cyan else Color.LightGray, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Box(modifier = Modifier.fillMaxWidth().height(105.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .scale(pulseScale)
+                        .background(Brush.radialGradient(listOf(if (isListening) Color(0x88FF5252) else Color(0x8845E6FF), Color.Transparent)), CircleShape)
+                        .clickable {
+                            if (isListening) {
+                                try { speechRecognizer?.stopListening() } catch (_: Exception) {}
+                                isListening = false
+                            } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                startVoiceRecognition()
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("◉", color = if (isListening) Color(0xFFFF6B6B) else cyan, fontSize = 52.sp)
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(messages) { msg ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (msg.isUser) Arrangement.End else Arrangement.Start) {
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = 290.dp)
+                                .background(if (msg.isUser) Color(0xFF087E9B) else Color(0xFF10243A), RoundedCornerShape(16.dp))
+                                .border(1.dp, if (msg.isUser) cyan.copy(alpha = 0.5f) else Color(0xFF1E3A5F), RoundedCornerShape(16.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(text = msg.text, color = Color.White, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    placeholder = { Text("JARVIS से पूछें या खुद को अपग्रेड करने को कहें...", color = Color.Gray, fontSize = 14.sp) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = cyan, unfocusedBorderColor = Color(0xFF1E3A5F), focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                    singleLine = true
+                )
+                IconButton(
+                    onClick = {
+                        if (isListening) {
+                            try { speechRecognizer?.stopListening() } catch (_: Exception) {}
+                            isListening = false
+                        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            startVoiceRecognition()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    modifier = Modifier.size(48.dp).background(if (isListening) Color(0xFFD32F2F) else Color(0xFF10243A), CircleShape).border(1.dp, cyan, CircleShape)
+                ) {
+                    Icon(if (isListening) Icons.Default.Stop else Icons.Default.Mic, contentDescription = "Mic", tint = Color.White)
+                }
+                IconButton(
+                    onClick = { sendQuery(inputText) },
+                    modifier = Modifier.size(48.dp).background(Color(0xFF087E9B), CircleShape)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White)
+                }
+            }
+        }
+    }
+
+    if (showSettings) {
+        var tempKey by remember { mutableStateOf(apiKey) }
+        var tempGhToken by remember { mutableStateOf(githubToken) }
+        AlertDialog(
+            onDismissRequest = { if (apiKey.isNotBlank()) showSettings = false },
+            title = { Text("JARVIS Brain & Self-Code Setup", color = cyan) },
+            text = {
+                Column {
+                    Text("1. Google Gemini API Key (aistudio.google.com से):", fontSize = 12.sp, color = Color.LightGray)
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(value = tempKey, onValueChange = { tempKey = it }, label = { Text("Gemini API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(12.dp))
+                    Text("2. GitHub Token (Self-Coding & Auto-Fix के लिए):", fontSize = 12.sp, color = Color.LightGray)
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(value = tempGhToken, onValueChange = { tempGhToken = it }, label = { Text("GitHub PAT (ghp_...)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    apiKey = tempKey.trim()
+                    githubToken = tempGhToken.trim()
+                    prefs.edit()
+                        .putString("gemini_api_key", apiKey)
+                        .putString("github_token", githubToken)
+                        .apply()
+                    showSettings = false
+                    Toast.makeText(context, "JARVIS सेटिंग्स सेव हो गईं!", Toast.LENGTH_SHORT).show()
+                }) { Text("Save") }
+            }
+        )
+    }
+}
+
 suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContext(Dispatchers.IO) {
     try {
         val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build()
@@ -684,7 +802,8 @@ private fun applyAllTags(
         val q = it.groupValues[1].trim()
         reply = reply.replace(Regex("\\[SEARCH:.*?\\]"), "").trim()
         try {
-            val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("[https://www.google.com/search?q=$](https://www.google.com/search?q=$){URLEncoder.encode(q, "UTF-8")}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                       val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${URLEncoder.encode(q, "UTF-8")}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
             context.startActivity(searchIntent)
         } catch (_: Exception) {}
     }
