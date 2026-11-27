@@ -526,7 +526,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         )
     }
 }
-
+}
 suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContext(Dispatchers.IO) {
     try {
         val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build()
@@ -548,7 +548,7 @@ suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContex
         }
     } catch (_: Exception) { null }
 }
-}
+
 fun downloadAndInstallApk(context: Context, apkUrl: String, onDone: (Boolean) -> Unit) {
     try {
         val destFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "jarvis_update.apk")
