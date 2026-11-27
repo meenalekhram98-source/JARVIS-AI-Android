@@ -203,7 +203,7 @@ fun JarvisApp(
         }
     }
 
-    var executeQueryRef by remember { mutableStateOf<((String) -> Unit)?>(null) }
+    var retryQueryCallback by remember { mutableStateOf<((String) -> Unit)?>(null) }
 
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -211,7 +211,7 @@ fun JarvisApp(
         val savedQuery = pendingContactQuery
         pendingContactQuery = null
         if (granted && savedQuery != null) {
-            executeQueryRef?.invoke(savedQuery)
+            retryQueryCallback?.invoke(savedQuery)
         } else if (!granted) {
             val msg = "कॉन्टैक्ट नाम से कॉल या मैसेज करने के लिए Contacts परमिशन ज़रूरी है सर।"
             messages.add(ChatMessage(msg, isUser = false))
@@ -219,9 +219,10 @@ fun JarvisApp(
         }
     }
 
-    fun executeQuery(query: String) {
+    fun sendQuery(query: String) {
         if (query.isBlank()) return
-        if (messages.lastOrNull()?.text != query || !messages.last().isUser) {
+        val lastMsg = messages.lastOrNull()
+        if (lastMsg == null || lastMsg.text != query || !lastMsg.isUser) {
             messages.add(ChatMessage(query, isUser = true))
         }
         inputText = ""
@@ -279,7 +280,7 @@ fun JarvisApp(
     }
 
     LaunchedEffect(Unit) {
-        executeQueryRef = { q -> executeQuery(q) }
+        retryQueryCallback = { q -> sendQuery(q) }
     }
 
     val speechRecognizer = remember { SpeechRecognizer.createSpeechRecognizer(context) }
@@ -309,7 +310,7 @@ fun JarvisApp(
                 isListening = false
                 val spoken = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
                 if (!spoken.isNullOrBlank()) {
-                    executeQuery(spoken)
+                    sendQuery(spoken)
                 }
             }
             override fun onPartialResults(partialResults: Bundle?) {
@@ -550,7 +551,7 @@ fun JarvisApp(
                 }
 
                 IconButton(
-                    onClick = { executeQuery(inputText) },
+                    onClick = { sendQuery(inputText) },
                     modifier = Modifier
                         .size(48.dp)
                         .background(Color(0xFF087E9B), CircleShape)
@@ -756,7 +757,9 @@ fun handleDeviceCommand(context: Context, rawQuery: String): String? {
     if (q.contains("timer") || q.contains("टाइमर")) {
         val numMatch = Regex("(\\d+)").find(q)
         val amount = numMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
-        val seconds = if (q.contains("second") || q.contains("सेकंड")) amount else amount * 60
+        val isSec = q.contains("second") || q.contains("सेकंड")
+        val seconds = if (isSec) amount else amount * 60
+        val unitLabel = if (isSec) "सेकंड" else "मिनट"
         val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
             putExtra(AlarmClock.EXTRA_LENGTH, seconds)
             putExtra(AlarmClock.EXTRA_MESSAGE, "JARVIS Timer")
@@ -765,7 +768,7 @@ fun handleDeviceCommand(context: Context, rawQuery: String): String? {
         }
         return try {
             context.startActivity(intent)
-            "जी लेखराम जी, $amount${if (q.contains("सेकंड") || q.contains("second")) "सेकंड" else "मिनट"} का टाइमर सेट कर रहा हूँ।"
+            "जी लेखराम जी, $amount$unitLabel का टाइमर सेट कर रहा हूँ।"
         } catch (_: Exception) {
             "टाइमर सेट करने में समस्या आई।"
         }
@@ -795,40 +798,4 @@ fun handleDeviceCommand(context: Context, rawQuery: String): String? {
     }
 
     // 4. YouTube Search / Play Video or Song
-    if ((q.contains("youtube") || q.contains("यूट्यूब")) && (q.contains("चला") || q.contains("play") || q.contains("search") || q.contains("सर्च") || q.contains("खोज") || q.contains("गाना") || q.contains("वीडियो"))) {
-        val searchQuery = rawQuery
-            .replace(Regex("(?i)(youtube|यूट्यूब|पर|में|चलाओ|चला|play|search|सर्च|करो|खोजो|गाना|वीडियो)"), "")
-            .trim()
-        if (searchQuery.isNotBlank()) {
-            val intent = Intent(Intent.ACTION_SEARCH).apply {
-                setPackage("com.google.android.youtube")
-                putExtra("query", searchQuery)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            return try {
-                context.startActivity(intent)
-                "जी लेखराम जी, YouTube पर '$searchQuery' चला रहा हूँ।"
-            } catch (_: Exception) {
-                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${URLEncoder.encode(searchQuery, "UTF-8")}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(webIntent)
-                "जी सर, YouTube पर '$searchQuery' खोज रहा हूँ।"
-            }
-        }
-    }
-
-    // 5. Settings Shortcuts
-    if (q.contains("wifi") || q.contains("wi-fi") || q.contains("वाईफाई")) {
-        context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        return "जी सर, Wi-Fi सेटिंग्स खोल रहा हूँ।"
-    }
-    if (q.contains("bluetooth") || q.contains("ब्लूटूथ")) {
-        context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        return "जी सर, Bluetooth सेटिंग्स खोल रहा हूँ।"
-    }
-    if (q.contains("settings") || q.contains("सेटिंग")) {
-        context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        return "जी सर, फोन की Settings खोल रहा हूँ।"
-    }
-
-    // 6. WhatsApp Direct Message (By Number OR Contact Name)
-    if ((q.contains("whatsapp") || q
+    if ((q.contains("youtube") || q.contains("यूट्यूब")) && (q.contains("चला") || q.contains("play") || q.contains("search") || q.contains("सर्च") || q.contains("खोज") ||
