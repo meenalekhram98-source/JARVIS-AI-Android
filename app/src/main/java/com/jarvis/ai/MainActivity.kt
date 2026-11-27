@@ -74,6 +74,7 @@ data class UpdateInfo(val available: Boolean, val title: String, val apkUrl: Str
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
+    var onSpeechFinishedCallback: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,25 +94,35 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            try {
-                val result = tts?.setLanguage(Locale("hi", "IN"))
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    tts?.setLanguage(Locale.US)
+            val result = tts?.setLanguage(Locale("hi", "IN"))
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                tts?.setLanguage(Locale.US)
+            }
+            tts?.setSpeechRate(1.05f)
+            tts?.setPitch(0.95f)
+            tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    runOnUiThread { onSpeechFinishedCallback?.invoke() }
                 }
-                tts?.setSpeechRate(1.05f)
-                tts?.setPitch(0.95f)
-                isTtsReady = true
-            } catch (_: Exception) {}
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {}
+            })
+            isTtsReady = true
         }
     }
 
     private fun speakHindi(text: String) {
-        if (isTtsReady) {
-            try {
-                val cleanText = text.replace("*", "").replace("#", "")
-                tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null, "JARVIS_UTTERANCE")
-            } catch (_: Exception) {}
-        }
+        if (!isTtsReady) return
+        try {
+            val prefs = getSharedPreferences("jarvis_prefs", MODE_PRIVATE)
+            tts?.setPitch(prefs.getFloat("voice_pitch", 0.95f))
+            tts?.setSpeechRate(prefs.getFloat("voice_rate", 1.05f))
+            val cleanText = text.replace("*", "").replace("#", "").trim()
+            val params = Bundle()
+            params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "jarvis_utt")
+            tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "jarvis_utt")
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
@@ -122,7 +133,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onDestroy()
     }
 }
-
 @Composable
 fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     val context = LocalContext.current
