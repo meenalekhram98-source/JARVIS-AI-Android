@@ -618,10 +618,10 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
         [ACTION: {"type":"BATTERY"}] or {"type":"STORAGE"} or {"type":"DEVICE_INFO"} or {"type":"VOLUME","action":"up/down/mute/max","percent":70} or {"type":"BRIGHTNESS","percent":50} or {"type":"INTENT","action":"android.settings.AIRPLANE_MODE_SETTINGS","uri":"","package":"","reply":"जी लेखराम जी, सेटिंग खोल दी है।"} or {"type":"OPEN_APP","package":"com.package.name","reply":"जी सर, खोल रहा हूँ।"}
     """.trimIndent()
 
-    val systemInstruction = when (mode) {
-        "STUDY" -> "$ownerIdentity You are JARVIS in Study Mode. Explain concepts clearly in simple Hindi/Hinglish with short examples like a great tutor."
-        "TRANSLATOR" -> "$ownerIdentity You are JARVIS Translator. If the user writes in Hindi, translate it to natural English. If in English or another language, translate it to clear Hindi."
-        else -> "$ownerIdentity You are JARVIS, a smart, loyal, self-improving personal AI assistant. Answer concisely in natural Hindi/Hinglish so it sounds great when spoken aloud."
+        val systemInstruction = when (mode) {
+        "STUDY" -> "$ownerIdentity You are JARVIS in STUDY MODE. Explain concepts clearly in simple Hindi/Hinglish with bullet points and examples."
+        "TRANSLATOR" -> "$ownerIdentity You are JARVIS in TRANSLATOR MODE. Translate user input cleanly between Hindi and English without extra commentary."
+        else -> "$ownerIdentity You are JARVIS, a smart, loyal, and concise personal AI assistant speaking natural Hindi/Hinglish."
     }
 
     var lastError = ""
@@ -629,23 +629,31 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
         try {
             val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
             val jsonBody = JSONObject().apply {
-                put("system_instruction", JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))) })
-                put("contents", JSONArray().put(JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", userMessage))) }))
+                if (model.startsWith("gemma")) {
+                    put("contents", JSONArray().put(JSONObject().apply {
+                        put("parts", JSONArray().put(JSONObject().put("text", "$systemInstruction\n\nUser: $userMessage")))
+                    }))
+                } else {
+                    put("system_instruction", JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))) })
+                    put("contents", JSONArray().put(JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", userMessage))) }))
+                }
             }
-            val request = Request.Builder().url(url).post(jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+            val request = Request.Builder().url(url).post(jsonBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(request).execute().use { response ->
                 val responseText = response.body?.string() ?: ""
                 if (response.isSuccessful) {
-                    var reply = JSONObject(responseText).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")?.trim()
+                                        var reply = JSONObject(responseText).optJSONArray("candidates")?.optJSONObject(0)
+                        ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
                     if (!reply.isNullOrBlank()) {
                         val learnRegex = Regex("\\[LEARN:(.*?)\\]")
                         learnRegex.find(reply!!)?.let {
-                            val updatedFacts = (learnedFacts + "\n- " + it.groupValues[1].trim()).takeLast(2500)
+                            val updatedFacts = (learnedFacts + "\n- " + it.groupValues[1].trim()).trim()
                             prefs.edit().putString("learned_facts", updatedFacts).apply()
                             reply = reply!!.replace(learnRegex, "").trim()
                         }
-
                         val skillRegex = Regex("\\[SKILL:(.*?)\\]")
+
+
                         skillRegex.find(reply!!)?.let {
                             val updatedSkills = (learnedSkills + "\n- " + it.groupValues[1].trim()).takeLast(2500)
                             prefs.edit().putString("learned_skills", updatedSkills).apply()
