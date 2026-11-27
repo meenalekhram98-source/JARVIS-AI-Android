@@ -123,7 +123,7 @@ fun JarvisApp(
 
     val messages = remember {
         mutableStateListOf(
-            ChatMessage("नमस्ते! मैं JARVIS हूँ। बताइए, आज मैं आपकी क्या मदद कर सकता हूँ?", isUser = false)
+            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। बताइए, आज मैं आपकी क्या मदद कर सकता हूँ?", isUser = false)
         )
     }
 
@@ -133,9 +133,9 @@ fun JarvisApp(
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when {
-            hour < 12 -> "GOOD MORNING"
-            hour < 17 -> "GOOD AFTERNOON"
-            else -> "GOOD EVENING"
+            hour < 12 -> "GOOD MORNING, LEKHRAM"
+            hour < 17 -> "GOOD AFTERNOON, LEKHRAM"
+            else -> "GOOD EVENING, LEKHRAM"
         }
     }
 
@@ -233,7 +233,9 @@ fun JarvisApp(
                         listOf(Color(0xFF10243A), background, Color(0xFF02050B))
                     )
                 )
-                .padding(16.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -242,7 +244,7 @@ fun JarvisApp(
             ) {
                 Column {
                     Text("J.A.R.V.I.S", color = cyan, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(greeting, color = Color.LightGray, fontSize = 10.sp, letterSpacing = 2.sp)
+                    Text(greeting, color = Color.LightGray, fontSize = 10.sp, letterSpacing = 1.5.sp)
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -300,12 +302,12 @@ fun JarvisApp(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(110.dp),
+                    .height(105.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .size(84.dp)
+                        .size(80.dp)
                         .scale(pulseScale)
                         .background(
                             Brush.radialGradient(
@@ -333,7 +335,7 @@ fun JarvisApp(
                     Text(
                         "◉",
                         color = if (isListening) Color(0xFFFF6B6B) else cyan,
-                        fontSize = 54.sp
+                        fontSize = 52.sp
                     )
                 }
             }
@@ -471,46 +473,56 @@ fun JarvisApp(
 }
 
 suspend fun askGemini(apiKey: String, userMessage: String, mode: String): String = withContext(Dispatchers.IO) {
-    try {
-        val systemInstruction = when (mode) {
-            "STUDY" -> "You are JARVIS in Study Mode. Explain concepts clearly in simple Hindi/Hinglish with short examples like a great tutor."
-            "TRANSLATOR" -> "You are JARVIS Translator. If the user writes in Hindi, translate it to natural English. If in English or another language, translate it to clear Hindi."
-            else -> "You are JARVIS, a smart, loyal, and polite personal AI assistant. Answer concisely in natural Hindi/Hinglish. Keep answers brief so they sound good when spoken aloud."
-        }
+    val models = listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash")
+    val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
 
-        val client = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .build()
+    val ownerIdentity = "Your creator and owner (malik) is Lekhram Meena (लेखराम मीना). Always address him respectfully as 'लेखराम जी' or 'सर' when appropriate. If anyone asks who your owner/creator is or asks 'mera naam kya hai', clearly state that his name is Lekhram Meena and he is your owner and creator."
 
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
-
-        val jsonBody = JSONObject().apply {
-            put("system_instruction", JSONObject().apply {
-                put("parts", JSONArray().put(JSONObject().put("text", systemInstruction)))
-            })
-            put("contents", JSONArray().put(JSONObject().apply {
-                put("parts", JSONArray().put(JSONObject().put("text", userMessage)))
-            }))
-            put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
-        }
-
-        val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-        val request = Request.Builder().url(url).post(body).build()
-
-        client.newCall(request).execute().use { response ->
-            val responseText = response.body?.string() ?: ""
-            if (!response.isSuccessful) {
-                return@withContext "API Error (${response.code}): कृपया अपनी API Key चेक करें।"
-            }
-            val json = JSONObject(responseText)
-            val candidates = json.optJSONArray("candidates")
-            val content = candidates?.optJSONObject(0)?.optJSONObject("content")
-            val parts = content?.optJSONArray("parts")
-            return@withContext parts?.optJSONObject(0)?.optString("text")?.trim()
-                ?: "माफ़ कीजिए, कोई जवाब नहीं मिला।"
-        }
-    } catch (e: Exception) {
-        return@withContext "इंटरनेट या सर्वर में समस्या है: ${e.localizedMessage}"
+    val systemInstruction = when (mode) {
+        "STUDY" -> "$ownerIdentity You are JARVIS in Study Mode. Explain concepts clearly in simple Hindi/Hinglish with short examples like a great tutor."
+        "TRANSLATOR" -> "$ownerIdentity You are JARVIS Translator. If the user writes in Hindi, translate it to natural English. If in English or another language, translate it to clear Hindi."
+        else -> "$ownerIdentity You are JARVIS, a smart, loyal, and polite personal AI assistant. Answer concisely in natural Hindi/Hinglish. Keep answers brief so they sound good when spoken aloud."
     }
+
+    var lastError = ""
+    for (model in models) {
+        try {
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=${apiKey.trim()}"
+            val jsonBody = JSONObject().apply {
+                put("system_instruction", JSONObject().apply {
+                    put("parts", JSONArray().put(JSONObject().put("text", systemInstruction)))
+                })
+                put("contents", JSONArray().put(JSONObject().apply {
+                    put("parts", JSONArray().put(JSONObject().put("text", userMessage)))
+                }))
+            }
+
+            val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder().url(url).post(body).build()
+
+            client.newCall(request).execute().use { response ->
+                val responseText = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val json = JSONObject(responseText)
+                    val candidates = json.optJSONArray("candidates")
+                    val content = candidates?.optJSONObject(0)?.optJSONObject("content")
+                    val parts = content?.optJSONArray("parts")
+                    val reply = parts?.optJSONObject(0)?.optString("text")?.trim()
+                    if (!reply.isNullOrBlank()) return@withContext reply
+                } else {
+                    val errMsg = try {
+                        JSONObject(responseText).optJSONObject("error")?.optString("message") ?: responseText
+                    } catch (_: Exception) { responseText }
+                    lastError = "Error ${response.code}: $errMsg"
+                }
+            }
+        } catch (e: Exception) {
+            lastError = e.localizedMessage ?: "Network error"
+        }
+    }
+    return@withContext "समस्या आई ($lastError)"
 }
+
