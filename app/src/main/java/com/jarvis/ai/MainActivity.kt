@@ -629,8 +629,7 @@ fun isBalancedCode(code: String): Boolean {
     return curly == 0 && round == 0 && code.contains("package com.jarvis.ai")
 }
 
-suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, prompt: String): String? = withContext(Dispatchers.IO) {
-suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, currentCode: String, instruction: String): String? {
+suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, currentCode: String, instruction: String): String? = withContext(Dispatchers.IO) {
     val cleanKey = apiKey.trim()
     val prompt = """
         You are an expert Kotlin & Jetpack Compose engineer modifying `MainActivity.kt` for an Android app.
@@ -692,22 +691,22 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, currentCode:
         } catch (_: Exception) {}
     }
 
-    if (rawOut == null) return null
-    return try {
+    if (rawOut == null) return@withContext null
+    try {
         val patches = JSONArray(rawOut)
-        if (patches.length() == 0) return null
+        if (patches.length() == 0) return@withContext null
         var updated = currentCode
         for (i in 0 until patches.length()) {
             val item = patches.getJSONObject(i)
             val s = item.getString("search")
             val r = item.getString("replace")
-            if (!updated.contains(s)) return null
+            if (!updated.contains(s)) return@withContext null
             updated = updated.replaceFirst(s, r)
         }
         updated
     } catch (_: Exception) { null }
 }
-}
+
 
 suspend fun selfCodeAndHealGitHub(
     apiKey: String,
