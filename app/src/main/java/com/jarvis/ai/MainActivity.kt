@@ -338,7 +338,14 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     ) { granted ->
         if (granted) startVoiceRecognition()
         else Toast.makeText(context, "माइक की परमिशन ज़रूरी है", Toast.LENGTH_SHORT).show()
-    }
+
+          LaunchedEffect(Unit) {
+     onSpeechFinishedCallback = {
+         if (prefs.getBoolean("auto_listen", false) && !isListening) startVoiceRecognition()
+     }
+ }
+
+     
 
     val background = Color(0xFF050B16)
     val cyan = Color(0xFF45E6FF)
@@ -618,7 +625,9 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
         3. If the user wants to search anything live on Google or open a web service/site to fulfill a task: append [SEARCH: search query]
                 4. For ANY phone hardware, system setting, volume, brightness, battery, storage, or Android Intent action, append:
         [ACTION: {"type":"BATTERY"}] or {"type":"STORAGE"} or {"type":"DEVICE_INFO"} or {"type":"VOLUME","action":"up/down/mute/max","percent":70} or {"type":"BRIGHTNESS","percent":50} or {"type":"INTENT","action":"android.settings.AIRPLANE_MODE_SETTINGS","uri":"","package":"","reply":"जी लेखराम जी, सेटिंग खोल दी है।"} or {"type":"OPEN_APP","package":"com.package.name","reply":"जी सर, खोल रहा हूँ।"}
-    """.trimIndent()
+    
+    5. If the user asks to change your voice, pitch, speed, or hands-free/auto-listen mode: append [VOICE: male], [VOICE: female], [VOICE: fast], [VOICE: normal], [AUTOLISTEN: on], or [AUTOLISTEN: off] at the end.
+""".trimIndent()
 
         val systemInstruction = when (mode) {
         "STUDY" -> "$ownerIdentity You are JARVIS in STUDY MODE. Explain concepts clearly in simple Hindi/Hinglish with bullet points and examples."
@@ -723,6 +732,24 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
                         prefs.edit().putString("learned_skills", updatedSkills).apply()
                         reply = reply!!.replace(skillRegex, "").trim()
                     }
+                                        Regex("\\[VOICE:(.*?)\\]").find(reply!!)?.let {
+                        val v = it.groupValues[1].trim().lowercase()
+                        val ed = prefs.edit()
+                        when {
+                            v.contains("male") || v.contains("bhari") -> ed.putFloat("voice_pitch", 0.78f)
+                            v.contains("female") || v.contains("ladki") -> ed.putFloat("voice_pitch", 1.25f)
+                            v.contains("fast") || v.contains("tez") -> ed.putFloat("voice_rate", 1.25f)
+                            else -> { ed.putFloat("voice_pitch", 0.95f); ed.putFloat("voice_rate", 1.05f) }
+                        }
+                        ed.apply()
+                        reply = reply!!.replace(Regex("\\[VOICE:.*?\\]"), "").trim()
+                    }
+                    Regex("\\[AUTOLISTEN:(.*?)\\]").find(reply!!)?.let {
+                        val on = it.groupValues[1].trim().lowercase() == "on"
+                        prefs.edit().putBoolean("auto_listen", on).apply()
+                        reply = reply!!.replace(Regex("\\[AUTOLISTEN:.*?\\]"), "").trim()
+                    }
+
                     val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $reply").takeLast(1500)
                     prefs.edit().putString("recent_chat", updatedHistory).apply()
                     return@withContext reply!!
