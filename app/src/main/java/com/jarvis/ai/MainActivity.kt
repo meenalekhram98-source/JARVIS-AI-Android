@@ -761,5 +761,7 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
     }
 
     return@withContext "समस्या आई ($lastError)"
+
+}
  
 }
