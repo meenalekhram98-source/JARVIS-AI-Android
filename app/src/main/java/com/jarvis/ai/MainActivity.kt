@@ -662,7 +662,8 @@ suspend fun selfCodeAndHealGitHub(
 
     try {
         onProgress("🔍 GitHub से $filePath पढ़ रहा हूँ...")
-        val fileUrl = "[https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/contents/$filePath](https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/contents/$filePath)"
+        val fileUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/contents/$filePath"
+
         val getReq = Request.Builder().url(fileUrl)
             .header("Authorization", "Bearer $token")
             .header("Accept", "application/vnd.github+json")
@@ -723,7 +724,8 @@ suspend fun selfCodeAndHealGitHub(
         onProgress("⚙️ GitHub Actions बिल्ड की निगरानी कर रहा हूँ (लगभग 90 सेकंड)...")
         delay(85_000)
 
-        val runsUrl = "[https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/runs?per_page=1](https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/runs?per_page=1)"
+        val runsUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/runs?per_page=1"
+
         val runsReq = Request.Builder().url(runsUrl).header("Authorization", "Bearer $token").build()
         client.newCall(runsReq).execute().use { res ->
             val runsJson = JSONObject(res.body?.string() ?: "{}")
@@ -881,7 +883,8 @@ suspend fun askGemini(
     var lastError = ""
     for (model in modelsToTry) {
         try {
-            val url = "[https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey](https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey)"
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
+
             val jsonBody = JSONObject().apply {
                 put("system_instruction", JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))) })
                 put("contents", JSONArray().put(JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", userMessage))) }))
@@ -923,7 +926,8 @@ suspend fun askGemini(
             put("model", "openai")
         }
         val fallbackReq = Request.Builder()
-            .url("[https://text.pollinations.ai/openai](https://text.pollinations.ai/openai)")
+            .url("https://text.pollinations.ai/openai")
+
             .post(fallbackBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
         client.newCall(fallbackReq).execute().use { res ->
