@@ -338,6 +338,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     ) { granted ->
         if (granted) startVoiceRecognition()
         else Toast.makeText(context, "माइक की परमिशन ज़रूरी है", Toast.LENGTH_SHORT).show()
+    }
 
           LaunchedEffect(Unit) {
      onSpeechFinishedCallback = {
@@ -487,7 +488,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White)
                 }
-            }
+        
         }
     }
 
@@ -764,4 +765,4 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
 
 }
  
-}
+
