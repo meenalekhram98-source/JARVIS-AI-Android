@@ -594,13 +594,15 @@ suspend fun askGemini(context: Context, apiKey: String, userMessage: String, mod
     val recentHistory = prefs.getString("recent_chat", "") ?: ""
 
     val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
-        val modelsToTry = listOf(
+            val modelsToTry = listOf(
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
         "gemini-2.0-flash",
         "gemini-2.0-flash-lite",
-        "gemma-3-27b-it"
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b"
     )
+
 
     val ownerIdentity = """
         Your creator and owner (malik) is Lekhram Meena (लेखराम मीना). Always address him respectfully as 'लेखराम जी' or 'सर'.
