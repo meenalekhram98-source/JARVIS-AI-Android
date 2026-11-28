@@ -553,7 +553,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
             ) {
                 Column {
                     Text("J.A.R.V.I.S", color = cyan, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(greeting, color = Color.LightGray, fontSize = 10.sp, letterSpacing = 1.5.sp)
+                    Text(greeting, color = Color.LightGray, fontSize = 9.sp, letterSpacing = 0.8.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -1156,7 +1156,7 @@ suspend fun askGemini(
         val fullPrompt = "$systemInstruction\n\nUser: $userMessage"
         val encodedPrompt = URLEncoder.encode(fullPrompt, "UTF-8")
         val fallbackReq = Request.Builder()
-            .url("https://text.pollinations.ai/$encodedPrompt")
+            .url("https://text.pollinations.ai/openai?model=openai")
             .get()
             .build()
         val res = client.newCall(fallbackReq).execute()
