@@ -30,10 +30,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -162,7 +165,9 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     val prefs = remember { context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE) }
     var apiKey by remember { mutableStateOf(prefs.getString("gemini_api_key", "") ?: "") }
     var githubToken by remember { mutableStateOf(prefs.getString("github_token", "") ?: "") }
+    var customModel by remember { mutableStateOf(prefs.getString("gemini_model", "gemini-2.5-flash") ?: "gemini-2.5-flash") }
     var showSettings by remember { mutableStateOf(apiKey.isBlank()) }
+    var showDirectPush by remember { mutableStateOf(false) }
 
     var inputText by remember { mutableStateOf("") }
     var isListening by remember { mutableStateOf(false) }
@@ -175,7 +180,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
 
     val messages = remember {
         mutableStateListOf(
-            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। अब मैं सेल्फ-कोडिंग और सेल्फ-हीलिंग इंजन से लैस हूँ—मैं खुद कोड लिखकर और बग्स ठीक करके अपडेट हो सकता हूँ।", isUser = false)
+            ChatMessage("नमस्ते लेखराम जी! मैं JARVIS हूँ। अब मेरे पास Direct Code Push और Auto-Healing इंजन है—अब आपको कभी GitHub खोलने की ज़रूरत नहीं पड़ेगी।", isUser = false)
         )
     }
 
@@ -304,7 +309,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         isThinking = true
         coroutineScope.launch {
             listState.animateScrollToItem(messages.size - 1)
-            val reply = askGemini(context, apiKey, githubToken, query, selectedMode) { statusMsg ->
+            val reply = askGemini(context, apiKey, githubToken, customModel, query, selectedMode) { statusMsg ->
                 messages.add(ChatMessage(statusMsg, isUser = false))
             }
             isThinking = false
@@ -403,11 +408,14 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (isDownloadingUpdate) "UPDATING..." else if (isListening) "LISTENING..." else if (isThinking) "CODING / THINKING..." else "ONLINE",
+                        if (isDownloadingUpdate) "UPDATING..." else if (isListening) "LISTENING..." else if (isThinking) "CODING..." else "ONLINE",
                         color = if (isListening || isDownloadingUpdate) Color(0xFFFF6B6B) else Color(0xFF8EF7C5),
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    IconButton(onClick = { showDirectPush = true }) {
+                        Icon(Icons.Default.Code, contentDescription = "Direct Code Push", tint = cyan)
+                    }
                     IconButton(onClick = {
                         coroutineScope.launch {
                             Toast.makeText(context, "अपडेट चेक कर रहा है...", Toast.LENGTH_SHORT).show()
@@ -447,10 +455,10 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                 }
             }
 
-            Box(modifier = Modifier.fillMaxWidth().height(105.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxWidth().height(95.dp), contentAlignment = Alignment.Center) {
                 Box(
                     modifier = Modifier
-                        .size(80.dp)
+                        .size(76.dp)
                         .scale(pulseScale)
                         .background(Brush.radialGradient(listOf(if (isListening) Color(0x88FF5252) else Color(0x8845E6FF), Color.Transparent)), CircleShape)
                         .clickable {
@@ -465,7 +473,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("◉", color = if (isListening) Color(0xFFFF6B6B) else cyan, fontSize = 52.sp)
+                    Text("◉", color = if (isListening) Color(0xFFFF6B6B) else cyan, fontSize = 48.sp)
                 }
             }
 
@@ -524,30 +532,89 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         }
     }
 
+    if (showDirectPush) {
+        var targetFile by remember { mutableStateOf("app/src/main/java/com/jarvis/ai/MainActivity.kt") }
+        var pastedCode by remember { mutableStateOf("") }
+        var isPushing by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isPushing) showDirectPush = false },
+            title = { Text("🚀 Direct Code Push (No GitHub Needed)", color = cyan, fontSize = 16.sp) },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text("यहाँ सीधे नया कोड पेस्ट करें—JARVIS खुद GitHub पर पुश करके बिल्ड कर देगा:", fontSize = 12.sp, color = Color.LightGray)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = targetFile,
+                        onValueChange = { targetFile = it },
+                        label = { Text("File Path") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = pastedCode,
+                        onValueChange = { pastedCode = it },
+                        label = { Text("Paste Full Kotlin Code Here") },
+                        modifier = Modifier.fillMaxWidth().height(180.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !isPushing && pastedCode.isNotBlank(),
+                    onClick = {
+                        isPushing = true
+                        showDirectPush = false
+                        messages.add(ChatMessage("🚀 Direct Code Push शुरू कर रहा हूँ ($targetFile)...", isUser = false))
+                        coroutineScope.launch {
+                            val res = pushRawCodeToGitHub(githubToken, targetFile.trim(), pastedCode) { prog ->
+                                messages.add(ChatMessage(prog, isUser = false))
+                            }
+                            isPushing = false
+                            messages.add(ChatMessage(res, isUser = false))
+                            listState.animateScrollToItem(messages.size - 1)
+                        }
+                    }
+                ) { Text("Push & Build") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDirectPush = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     if (showSettings) {
         var tempKey by remember { mutableStateOf(apiKey) }
         var tempGhToken by remember { mutableStateOf(githubToken) }
+        var tempModel by remember { mutableStateOf(customModel) }
         AlertDialog(
             onDismissRequest = { if (apiKey.isNotBlank()) showSettings = false },
             title = { Text("JARVIS Brain & Self-Code Setup", color = cyan) },
             text = {
-                Column {
-                    Text("1. Google Gemini API Key (aistudio.google.com से):", fontSize = 12.sp, color = Color.LightGray)
-                    Spacer(Modifier.height(6.dp))
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text("1. Google Gemini API Key:", fontSize = 12.sp, color = Color.LightGray)
+                    Spacer(Modifier.height(4.dp))
                     OutlinedTextField(value = tempKey, onValueChange = { tempKey = it }, label = { Text("Gemini API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(12.dp))
-                    Text("2. GitHub Token (Self-Coding & Auto-Fix के लिए):", fontSize = 12.sp, color = Color.LightGray)
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(value = tempGhToken, onValueChange = { tempGhToken = it }, label = { Text("GitHub PAT (ghp_...)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(10.dp))
+                    Text("2. GitHub Token (ghp_...):", fontSize = 12.sp, color = Color.LightGray)
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(value = tempGhToken, onValueChange = { tempGhToken = it }, label = { Text("GitHub PAT") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(10.dp))
+                    Text("3. Active Gemini Model (404 आने पर यहाँ बदलें):", fontSize = 12.sp, color = Color.LightGray)
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(value = tempModel, onValueChange = { tempModel = it }, label = { Text("Model Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
             },
             confirmButton = {
                 Button(onClick = {
                     apiKey = tempKey.trim()
                     githubToken = tempGhToken.trim()
+                    customModel = tempModel.trim().ifBlank { "gemini-2.5-flash" }
                     prefs.edit()
                         .putString("gemini_api_key", apiKey)
                         .putString("github_token", githubToken)
+                        .putString("gemini_model", customModel)
                         .apply()
                     showSettings = false
                     Toast.makeText(context, "JARVIS सेटिंग्स सेव हो गईं!", Toast.LENGTH_SHORT).show()
@@ -556,7 +623,6 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         )
     }
 }
-
 suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContext(Dispatchers.IO) {
     try {
         val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build()
@@ -625,15 +691,64 @@ fun isBalancedCode(code: String): Boolean {
         }
         prev = c
     }
-    return curly == 0 && round == 0 && code.contains("package com.jarvis.ai")
+    return curly == 0 && round == 0
 }
 
-suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, prompt: String): String? = withContext(Dispatchers.IO) {
+suspend fun pushRawCodeToGitHub(
+    githubToken: String,
+    filePath: String,
+    newCode: String,
+    onProgress: suspend (String) -> Unit
+): String = withContext(Dispatchers.IO) {
+    val token = githubToken.trim()
+    if (token.isBlank()) return@withContext "पहले Settings (⚙️) में अपना GitHub Token डालें सर।"
+    if (!isBalancedCode(newCode)) return@withContext "⚠️ कोड में ब्रैकेट `{}` या `()` अधूरे हैं—सुरक्षा के लिए पुश रोका गया।"
+
+    val client = OkHttpClient.Builder().connectTimeout(45, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
+    val fileUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/contents/$filePath"
+
+    try {
+        val getReq = Request.Builder().url(fileUrl)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/vnd.github+json")
+            .build()
+        var currentSha = ""
+        client.newCall(getReq).execute().use { res ->
+            if (res.isSuccessful) {
+                currentSha = JSONObject(res.body?.string() ?: "{}").optString("sha")
+            }
+        }
+
+        val putBody = JSONObject().apply {
+            put("message", "JARVIS Direct Push: $filePath")
+            put("content", Base64.encodeToString(newCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+            if (currentSha.isNotBlank()) put("sha", currentSha)
+            put("branch", "main")
+        }
+        val putReq = Request.Builder().url(fileUrl)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/vnd.github+json")
+            .put(putBody.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        client.newCall(putReq).execute().use { res ->
+            if (!res.isSuccessful) return@withContext "GitHub पुश फेल हुआ (${res.code}): ${res.body?.string()}"
+        }
+
+        withContext(Dispatchers.Main) { onProgress("⚙️ कोड पुश हो गया! अब 90 सेकंड बिल्ड की प्रतीक्षा कर रहा हूँ...") }
+        delay(85_000)
+        return@withContext "✅ Direct Push और बिल्ड पूरा हो गया लेखराम जी! अब ऊपर अपडेट आइकन दबाएं।"
+    } catch (e: Exception) {
+        return@withContext "Direct Push एरर: ${e.localizedMessage}"
+    }
+}
+
+suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel: String, prompt: String): String? = withContext(Dispatchers.IO) {
     val cleanKey = apiKey.trim()
     var rawOut: String? = null
 
     if (cleanKey.isNotBlank()) {
-        for (model in listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) {
+        val models = listOf(customModel, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro").distinct()
+        for (model in models) {
             try {
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
                 val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
@@ -653,22 +768,12 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, prompt: Stri
 
     if (rawOut == null) {
         try {
-            val fbBody = JSONObject().apply {
-                put("messages", JSONArray().apply {
-                    put(JSONObject().put("role", "system").put("content", "You are an expert Kotlin Android developer. Return ONLY complete valid Kotlin code without markdown fences."))
-                    put(JSONObject().put("role", "user").put("content", prompt))
-                })
-                put("model", "openai")
-            }
-            val fbReq = Request.Builder()
-                .url("https://text.pollinations.ai/openai")
-                .post(fbBody.toString().toRequestBody("application/json".toMediaType()))
-                .build()
+            val encoded = URLEncoder.encode("Return ONLY complete valid Kotlin code without markdown fences.\n\n$prompt", "UTF-8")
+            val fbReq = Request.Builder().url("https://text.pollinations.ai/$encoded").get().build()
             client.newCall(fbReq).execute().use { res ->
                 if (res.isSuccessful) {
-                    val resText = res.body?.string() ?: "{}"
-                    val txt = JSONObject(resText).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "")
-                    if (!txt.isNullOrBlank()) {
+                    val txt = res.body?.string() ?: ""
+                    if (txt.isNotBlank()) {
                         rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
                     }
                 }
@@ -681,6 +786,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, prompt: Stri
 suspend fun selfCodeAndHealGitHub(
     apiKey: String,
     githubToken: String,
+    customModel: String,
     filePath: String,
     instruction: String,
     onProgress: suspend (String) -> Unit
@@ -723,13 +829,13 @@ suspend fun selfCodeAndHealGitHub(
             $currentCode
         """.trimIndent()
 
-        var newCode = callLLMCodeWriter(client, apiKey, codePrompt)
+        var newCode = callLLMCodeWriter(client, apiKey, customModel, codePrompt)
             ?: return@withContext "कोड जेनरेट नहीं हो सका—कृपया Gemini API Key जांचें।"
 
-        if (!isBalancedCode(newCode)) {
+        if (!isBalancedCode(newCode) || !newCode.contains("package com.jarvis.ai")) {
             onProgress("⚠️ ब्रैकेट असंतुलन मिला, कोड को ऑटो-रिपेयर कर रहा हूँ...")
-            newCode = callLLMCodeWriter(client, apiKey, "Fix any unmatched curly braces `{}` or parentheses `()` in this Kotlin file and return ONLY the complete valid Kotlin code:\n\n$newCode") ?: ""
-            if (!isBalancedCode(newCode)) {
+            newCode = callLLMCodeWriter(client, apiKey, customModel, "Fix any unmatched curly braces `{}` or parentheses `()` in this Kotlin file and return ONLY the complete valid Kotlin code:\n\n$newCode") ?: ""
+            if (!isBalancedCode(newCode) || !newCode.contains("package com.jarvis.ai")) {
                 return@withContext "सुरक्षा कारणों से कमिट रोका गया: जेनरेट किए गए कोड में ब्रैकेट बैलेंस सही नहीं था।"
             }
         }
@@ -754,7 +860,6 @@ suspend fun selfCodeAndHealGitHub(
         delay(85_000)
 
         val runsUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/runs?per_page=1"
-
         val runsReq = Request.Builder().url(runsUrl).header("Authorization", "Bearer $token").build()
         client.newCall(runsReq).execute().use { res ->
             val runsJson = JSONObject(res.body?.string() ?: "{}")
@@ -777,7 +882,7 @@ suspend fun selfCodeAndHealGitHub(
             }
         }
 
-        return@withContext "✅ कोडिंग और बिल्ड सफल रहा लेखराम जी! अब बस 'अपडेट चेक करो' बोलें या ऊपर अपडेट आइकन दबाएं, नया APK इंस्टॉल हो जाएगा।"
+        return@withContext "✅ कोडिंग और बिल्ड सफल रहा लेखराम जी! अब बस 'अपडेट चेक करो' बोलें या ऊपर अपडेट आइकन दबाएं।"
     } catch (e: Exception) {
         return@withContext "सेल्फ-कोडिंग में त्रुटि आई: ${e.localizedMessage}"
     }
@@ -861,6 +966,7 @@ suspend fun askGemini(
     context: Context,
     apiKey: String,
     githubToken: String,
+    customModel: String,
     userMessage: String,
     mode: String,
     onProgress: suspend (String) -> Unit
@@ -873,11 +979,11 @@ suspend fun askGemini(
 
     val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(35, TimeUnit.SECONDS).build()
     val modelsToTry = if (cleanKey.isBlank()) emptyList() else listOf(
+        customModel,
         "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite"
-    )
+        "gemini-flash-latest",
+        "gemini-2.5-pro"
+    ).distinct()
 
     val ownerIdentity = """
         Your creator and owner (malik) is Lekhram Meena (लेखराम मीना). Always address him respectfully as 'लेखराम जी' or 'सर'.
@@ -912,7 +1018,6 @@ suspend fun askGemini(
     for (model in modelsToTry) {
         try {
             val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
-
             val jsonBody = JSONObject().apply {
                 put("system_instruction", JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))) })
                 put("contents", JSONArray().put(JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", userMessage))) }))
@@ -930,7 +1035,7 @@ suspend fun askGemini(
 
                         if (selfCodeTask != null) {
                             withContext(Dispatchers.Main) { onProgress(cleanReply) }
-                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, selfCodeTask.first, selfCodeTask.second) { prog ->
+                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second) { prog ->
                                 withContext(Dispatchers.Main) { onProgress(prog) }
                             }
                         }
@@ -946,35 +1051,26 @@ suspend fun askGemini(
     }
 
     try {
-        val fallbackBody = JSONObject().apply {
-            put("messages", JSONArray().apply {
-                put(JSONObject().put("role", "system").put("content", systemInstruction))
-                put(JSONObject().put("role", "user").put("content", userMessage))
-            })
-            put("model", "openai")
-        }
+        val fullPrompt = "$systemInstruction\n\nUser: $userMessage"
+        val encodedPrompt = URLEncoder.encode(fullPrompt, "UTF-8")
         val fallbackReq = Request.Builder()
-            .url("https://text.pollinations.ai/openai")
-            .post(fallbackBody.toString().toRequestBody("application/json".toMediaType()))
+            .url("https://text.pollinations.ai/$encodedPrompt")
+            .get()
             .build()
         client.newCall(fallbackReq).execute().use { res ->
-            val resText = res.body?.string() ?: ""
-            if (res.isSuccessful && resText.isNotBlank()) {
-                val rawReply = JSONObject(resText).optJSONArray("choices")?.optJSONObject(0)
-                    ?.optJSONObject("message")?.optString("content")
-                if (!rawReply.isNullOrBlank()) {
-                    val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
-                    val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(1500)
-                    prefs.edit().putString("recent_chat", updatedHistory).apply()
+            val rawReply = res.body?.string() ?: ""
+            if (res.isSuccessful && rawReply.isNotBlank()) {
+                val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
+                val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(1500)
+                prefs.edit().putString("recent_chat", updatedHistory).apply()
 
-                    if (selfCodeTask != null) {
-                        withContext(Dispatchers.Main) { onProgress(cleanReply) }
-                        return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, selfCodeTask.first, selfCodeTask.second) { prog ->
-                            withContext(Dispatchers.Main) { onProgress(prog) }
-                        }
+                if (selfCodeTask != null) {
+                    withContext(Dispatchers.Main) { onProgress(cleanReply) }
+                    return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second) { prog ->
+                        withContext(Dispatchers.Main) { onProgress(prog) }
                     }
-                    return@withContext cleanReply
                 }
+                return@withContext cleanReply
             } else {
                 lastError = if (lastError.isBlank()) "Fallback HTTP ${res.code}" else "$lastError | Fallback ${res.code}"
             }
@@ -983,5 +1079,7 @@ suspend fun askGemini(
         lastError = if (lastError.isBlank()) (e.localizedMessage ?: "Connection failed") else "$lastError | ${e.localizedMessage}"
     }
 
+    return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" }})"
+}
     return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" }})"
 }
