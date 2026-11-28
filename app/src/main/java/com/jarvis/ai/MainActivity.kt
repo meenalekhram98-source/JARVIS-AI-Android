@@ -868,24 +868,63 @@ suspend fun selfCodeAndHealGitHub(
         val currentCode = String(Base64.decode(getJson.getString("content").replace("\n", ""), Base64.DEFAULT), Charsets.UTF_8)
 
         onProgress("🧠 नया और एरर-फ्री कोड लिख रहा हूँ...")
-        val idx = currentCode.indexOf("J.A.R.V.I.S").let { if (it > 300) it - 300 else 0 }; val snippet = currentCode.substring(idx, minOf(currentCode.length, idx + 3500))
-        val prompt = """Modify JARVIS AI $targetPath for User Request: $instruction
-Output ONLY the exact replacement block in this format (do NOT output the whole file):
+        val allLines = currentCode.lines()
+        val keys = instruction.lowercase().split(Regex("[^a-z0-9_]+")).filter { it.length >= 4 }.distinct()
+        val picked = linkedSetOf<Int>()
+        for (i in 0 until minOf(75, allLines.size)) picked.add(i)
+        allLines.forEachIndexed { idxL, ln ->
+            val low = ln.lowercase()
+            if (keys.any { low.contains(it) }) {
+                for (j in maxOf(0, idxL - 12)..minOf(allLines.lastIndex, idxL + 22)) picked.add(j)
+            }
+        }
+        if (picked.size < 120) {
+            val mid = allLines.size / 2
+            for (j in maxOf(0, mid - 60)..minOf(allLines.lastIndex, mid + 60)) picked.add(j)
+        }
+        val snippet = picked.sorted().joinToString("\n") { "${it + 1}: ${allLines[it]}" }.take(14000)
+
+        val prompt = """Modify JARVIS AI ($targetPath, total ${allLines.size} lines) for User Request: $instruction
+Output ONLY exact surgical replacement blocks (do NOT include line numbers, do NOT output whole file):
 <<<SEARCH>>>
-exact existing lines (5 to 20 lines, 100% identical)
+exact existing lines (4 to 20 lines)
 <<<REPLACE>>>
 new updated lines
 <<<END>>>
 
-File content:
+Relevant file slices:
 $snippet"""
 
         val aiOut = callLLMCodeWriter(client, apiKey, customModel, prompt) ?: ""
-        val updatedCode = if (aiOut.contains("<<<SEARCH>>>") && aiOut.contains("<<<REPLACE>>>")) {
-            val s = aiOut.substringAfter("<<<SEARCH>>>").substringBefore("<<<REPLACE>>>").trim('\r', '\n')
-            val r = aiOut.substringAfter("<<<REPLACE>>>").substringBefore("<<<END>>>").trim('\r', '\n')
-            if (s.isNotBlank() && currentCode.contains(s)) currentCode.replaceFirst(s, r) else ""
-        } else if (aiOut.contains("package com.jarvis.ai") && aiOut.length > 5000) aiOut else ""
+        var patched = currentCode
+        var patchCount = 0
+        val regex = Regex("<<<SEARCH>>>\\s*\\n([\\s\\S]*?)\\n<<<REPLACE>>>\\s*\\n([\\s\\S]*?)\\n<<<END>>>")
+        for (m in regex.findAll(aiOut)) {
+            val s = m.groupValues[1].trim('\r', '\n')
+            val r = m.groupValues[2].trim('\r', '\n')
+            if (s.isNotBlank() && patched.contains(s)) {
+                patched = patched.replaceFirst(s, r)
+                patchCount++
+            } else if (s.isNotBlank()) {
+                val sLines = s.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                val cLines = patched.lines()
+                if (sLines.size >= 2) {
+                    for (i in 0..(cLines.size - sLines.size)) {
+                        var ok = true
+                        for (k in sLines.indices) {
+                            if (cLines[i + k].trim() != sLines[k]) { ok = false; break }
+                        }
+                        if (ok) {
+                            val exactOld = cLines.subList(i, i + sLines.size).joinToString("\n")
+                            patched = patched.replaceFirst(exactOld, r)
+                            patchCount++
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        val updatedCode = if (patchCount > 0) patched else if (aiOut.contains("package com.jarvis.ai") && aiOut.length > 5000) aiOut else ""
 
         if (updatedCode.isBlank() || !isBalancedCode(updatedCode)) {
             return@withContext "❌ कोड जेनरेट नहीं हो सका—कमांड थोड़ा और स्पष्ट लिखें।"
