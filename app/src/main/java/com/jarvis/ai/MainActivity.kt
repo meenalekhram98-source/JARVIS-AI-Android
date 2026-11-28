@@ -1081,5 +1081,3 @@ suspend fun askGemini(
 
     return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" }})"
 }
-    return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" }})"
-}
