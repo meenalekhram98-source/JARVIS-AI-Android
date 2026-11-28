@@ -118,8 +118,6 @@ object OfflineBrainManager {
                 val opts = LlmInference.LlmInferenceOptions.builder()
                     .setModelPath(modelFile.absolutePath)
                     .setMaxTokens(512)
-                    .setTopK(40)
-                    .setTemperature(0.6f)
                     .build()
                 llm = LlmInference.createFromOptions(context.applicationContext, opts)
                 loadedPath = modelFile.absolutePath
