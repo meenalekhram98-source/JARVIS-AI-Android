@@ -640,6 +640,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
 
     if (showSettings) {
 var tempOrKey by remember { mutableStateOf(prefs.getString("openrouter_api_key", "") ?: "") }
+var tempPrimary by remember { mutableStateOf(prefs.getString("primary_engine", "GEMINI") ?: "GEMINI") }
         var tempKey by remember { mutableStateOf(apiKey) }
         var tempGhToken by remember { mutableStateOf(githubToken) }
         var tempModel by remember { mutableStateOf(customModel) }
@@ -663,6 +664,8 @@ Spacer(Modifier.height(10.dp))
 Text("4. OpenRouter Key (Fallback):", fontSize = 12.sp, color = Color.LightGray)
 Spacer(Modifier.height(4.dp))
 OutlinedTextField(value = tempOrKey, onValueChange = { tempOrKey = it }, label = { Text("sk-or-v1-...") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+Spacer(Modifier.height(10.dp))
+Row(verticalAlignment = Alignment.CenterVertically) { Text("Primary Engine: ", fontSize = 12.sp, color = Color.LightGray); TextButton(onClick = { tempPrimary = if (tempPrimary == "GEMINI") "OPENROUTER" else "GEMINI" }) { Text(tempPrimary, color = cyan, fontWeight = FontWeight.Bold) } }
                 }
             },
             confirmButton = {
@@ -675,6 +678,7 @@ OutlinedTextField(value = tempOrKey, onValueChange = { tempOrKey = it }, label =
                         .putString("github_token", githubToken)
                         .putString("gemini_model", customModel)
 .putString("openrouter_api_key", tempOrKey.trim())
+.putString("primary_engine", tempPrimary)
                         .apply()
                     showSettings = false
                     Toast.makeText(context, "JARVIS सेटिंग्स सेव हो गईं!", Toast.LENGTH_SHORT).show()
@@ -993,7 +997,8 @@ suspend fun askGemini(
     val recentHistory = prefs.getString("recent_chat", "") ?: ""
 
     val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
-    val modelsToTry = if (cleanKey.isBlank()) emptyList() else listOf(
+    val preferOr = (prefs.getString("primary_engine", "GEMINI") == "OPENROUTER") && (prefs.getString("openrouter_api_key", "")?.isNotBlank() == true)
+val modelsToTry = if (cleanKey.isBlank() || preferOr) emptyList() else listOf(
         customModel,
         "gemini-2.5-flash",
         "gemini-flash-latest",
