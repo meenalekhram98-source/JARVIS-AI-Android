@@ -752,7 +752,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
             try {
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
                 val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                val req = Request.Builder().url(url).post(body.toString().toRequestBody("application/json".toMediaType())).build()
+                val req = Request.Builder().url(url).header("x-goog-api-key", apiKey.trim()).post(body.toString().toRequestBody("application/json".toMediaType())).build()
                 client.newCall(req).execute().use { res ->
                     if (res.isSuccessful) {
                         val txt = JSONObject(res.body?.string() ?: "{}").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "")
