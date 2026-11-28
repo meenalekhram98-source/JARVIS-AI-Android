@@ -1040,6 +1040,15 @@ suspend fun askGemini(
     mode: String,
     onProgress: suspend (String) -> Unit
 ): String = withContext(Dispatchers.IO) {
+    if (mode == "CODE") {
+        val targetFile = when {
+            userMessage.contains("build.gradle.kts", ignoreCase = true) -> "app/build.gradle.kts"
+            userMessage.contains("AndroidManifest.xml", ignoreCase = true) -> "app/src/main/AndroidManifest.xml"
+            userMessage.contains(".yml", ignoreCase = true) -> ".github/workflows/android.yml"
+            else -> "app/src/main/java/com/jarvis/ai/MainActivity.kt"
+        }
+        return@withContext selfCodeAndHealGitHub(apiKey, githubToken, customModel, targetFile, userMessage, onProgress)
+    }
     val cleanKey = apiKey.trim()
     val prefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
     val learnedFacts = prefs.getString("learned_facts", "") ?: ""
