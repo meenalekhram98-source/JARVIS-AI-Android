@@ -639,6 +639,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
     }
 
     if (showSettings) {
+var tempOrKey by remember { mutableStateOf(prefs.getString("openrouter_api_key", "") ?: "") }
         var tempKey by remember { mutableStateOf(apiKey) }
         var tempGhToken by remember { mutableStateOf(githubToken) }
         var tempModel by remember { mutableStateOf(customModel) }
@@ -658,6 +659,10 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                     Text("3. Active Gemini Model (404 आने पर यहाँ बदलें):", fontSize = 12.sp, color = Color.LightGray)
                     Spacer(Modifier.height(4.dp))
                     OutlinedTextField(value = tempModel, onValueChange = { tempModel = it }, label = { Text("Model Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+Spacer(Modifier.height(10.dp))
+Text("4. OpenRouter Key (Fallback):", fontSize = 12.sp, color = Color.LightGray)
+Spacer(Modifier.height(4.dp))
+OutlinedTextField(value = tempOrKey, onValueChange = { tempOrKey = it }, label = { Text("sk-or-v1-...") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
             },
             confirmButton = {
@@ -669,6 +674,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                         .putString("gemini_api_key", apiKey)
                         .putString("github_token", githubToken)
                         .putString("gemini_model", customModel)
+.putString("openrouter_api_key", tempOrKey.trim())
                         .apply()
                     showSettings = false
                     Toast.makeText(context, "JARVIS सेटिंग्स सेव हो गईं!", Toast.LENGTH_SHORT).show()
@@ -1060,7 +1066,7 @@ suspend fun askGemini(
     try {
         val fullPrompt = "$systemInstruction\n\nUser: $userMessage"
         val encodedPrompt = URLEncoder.encode(fullPrompt, "UTF-8")
-        val fbPrompt = java.net.URLEncoder.encode("You are JARVIS, personal AI assistant of Lekhram Meena. Reply concisely in Hindi/Hinglish. User: " + userMessage, "UTF-8"); val fallbackReq = Request.Builder().url("https://text.pollinations.ai/" + fbPrompt).get().build()
+        val orKey = prefs.getString("openrouter_api_key", "")?.trim() ?: ""; val fallbackReq = if (orKey.isNotBlank()) { val orBody = JSONObject().put("model", "openrouter/free").put("messages", JSONArray().put(JSONObject().put("role", "system").put("content", systemInstruction)).put(JSONObject().put("role", "user").put("content", userMessage))).toString().toRequestBody("application/json".toMediaType()); Request.Builder().url("https://openrouter.ai/api/v1/chat/completions").addHeader("Authorization", "Bearer " + orKey).post(orBody).build() } else { val fbPrompt = java.net.URLEncoder.encode("You are JARVIS, personal AI assistant of Lekhram Meena. Reply concisely in Hindi/Hinglish. User: " + userMessage, "UTF-8"); Request.Builder().url("https://text.pollinations.ai/" + fbPrompt).get().build() }
         val res = client.newCall(fallbackReq).execute()
             val rawFb = res.body?.string() ?: ""; val rawReply = if (rawFb.trim().startsWith("{")) JSONObject(rawFb).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawFb
                 res.close()
