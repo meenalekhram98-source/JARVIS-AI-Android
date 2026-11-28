@@ -374,6 +374,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
 
     LaunchedEffect(Unit) {
         retryQueryCallback = { q -> sendQuery(q) }
+try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager; val bat=bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY); val hr=java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY); val s=if(hr<12)"सुबह" else if(hr<17)"दोपहर" else if(hr<21)"शाम" else "रात"; val a=if(bat in 1..25)"बैटरी सिर्फ़ $bat% बची है—चार्जर लगा लें।" else "बैटरी $bat% है और सभी सिस्टम ऑनलाइन हैं।"; val b="⚡ [Proactive Briefing] शुभ $s लेखराम जी! $a आज क्या मिशन है?"; messages.add(ChatMessage(b,false)); if(voiceOutputEnabled)onSpeak(b.replace("⚡ [Proactive Briefing] ",""))}catch(_:Exception){}
     }
 
     val speechRecognizer = remember {
@@ -526,7 +527,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("◉", color = if (isListening) Color(0xFFFF6B6B) else cyan, fontSize = 48.sp)
+                    val inf=androidx.compose.animation.core.rememberInfiniteTransition("a"); val r1 by inf.animateFloat(0f,360f,androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(9000,easing=androidx.compose.animation.core.LinearEasing)),"1"); val r2 by inf.animateFloat(360f,0f,androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(5500,easing=androidx.compose.animation.core.LinearEasing)),"2"); val col=if(isListening)Color(0xFFFF5252)else if(isThinking)Color(0xFFFFD740)else cyan; androidx.compose.foundation.Canvas(Modifier.size(92.dp)){val r=size.minDimension/2f; drawCircle(col.copy(0.15f),r); for(i in 0..5)drawArc(col.copy(0.85f),r1+i*60f,38f,false,style=androidx.compose.ui.graphics.drawscope.Stroke(3.5.dp.toPx())); for(i in 0..2)drawArc(col,r2+i*120f,80f,false,androidx.compose.ui.geometry.Offset(r*0.24f,r*0.24f),androidx.compose.ui.geometry.Size(r*1.52f,r*1.52f),style=androidx.compose.ui.graphics.drawscope.Stroke(2.5.dp.toPx())); val t=androidx.compose.ui.graphics.Path().apply{moveTo(center.x,center.y-r*0.34f);lineTo(center.x+r*0.3f,center.y+r*0.22f);lineTo(center.x-r*0.3f,center.y+r*0.22f);close()}; drawPath(t,col.copy(0.35f)); drawPath(t,col,style=androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx())); drawCircle(Color.White,r*0.08f)}
                 }
             }
 
