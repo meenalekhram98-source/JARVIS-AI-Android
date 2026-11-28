@@ -88,6 +88,20 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            var warned15 = false
+            registerReceiver(object : android.content.BroadcastReceiver() {
+                override fun onReceive(ctx: android.content.Context?, i: android.content.Intent?) {
+                    val lvl = i?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                    val st = i?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+                    val charging = st == android.os.BatteryManager.BATTERY_STATUS_CHARGING
+                    if (lvl in 1..15 && !charging && !warned15) {
+                        warned15 = true
+                        tts?.speak("Lekhram Sir, battery $lvl percent bachi hai. Power saving mode on kar doon?", TextToSpeech.QUEUE_FLUSH, null, "bat_alert")
+                    } else if (lvl > 20) warned15 = false
+                }
+            }, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+        } catch (_: Exception) {}
+        try {
             tts = TextToSpeech(this, this)
         } catch (_: Exception) {}
 
@@ -225,7 +239,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when {
             hour < 12 -> "GOOD MORNING, LEKHRAM"
-            hour < 17 -> "GOOD AFTERNOON, LEKHRAM"
+            hour < 17 -> "GOOD AFTERNOON, LEKHRAM • MADE FOR LEKHRAM"
             else -> "GOOD EVENING, LEKHRAM"
         }
     }
@@ -976,7 +990,7 @@ suspend fun askGemini(
     val systemInstruction = when (mode) {
         "CODE" -> "$ownerIdentity You are JARVIS in MASTER SOFTWARE ARCHITECT MODE. Write clean, complete, production-grade code in any language requested, and use [SELFCODE: ...] whenever upgrading yourself."
         "STUDY" -> "$ownerIdentity You are JARVIS in STUDY MODE. Explain concepts clearly in simple Hindi/Hinglish with bullet points and examples."
-        else -> "$ownerIdentity You are JARVIS, a smart, loyal personal AI assistant speaking natural Hindi/Hinglish."
+        else -> "$ownerIdentity You are J.A.R.V.I.S., Tony Stark's calm, witty, hyper-efficient AI digital butler created for Lekhram. Address user respectfully as 'Lekhram Sir' or 'Sir'. Keep answers crisp, direct, confident with subtle dry British wit—never long robotic lectures. Confirm actions like 'Done, Sir.' Match user language (Hinglish/Hindi/English)."
     }
 
     var lastError = ""
