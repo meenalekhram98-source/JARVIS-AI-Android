@@ -95,6 +95,12 @@ private const val GITHUB_REPO = "JARVIS-AI-Android"
 
 
 object OfflineBrainManager {
+    @Synchronized
+    fun shutdown() {
+        try { llm?.close() } catch (_: Exception) {}
+        llm = null
+        loadedPath = ""
+    }
     private var llm: LlmInference? = null
     private var loadedPath: String = ""
 
@@ -322,6 +328,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         } catch (_: Exception) {}
     }
 
+    var jarvisPowerOn by remember { mutableStateOf(true) }
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when {
@@ -359,6 +366,10 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     }
 
     fun sendQuery(query: String) {
+        if (!jarvisPowerOn) {
+            Toast.makeText(context, "🔴 JARVIS abhi OFF hai — pehle Power (⏻) ON karein", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (query.isBlank()) return
         val lastMsg = messages.lastOrNull()
         if (lastMsg == null || lastMsg.text != query || !lastMsg.isUser) {
@@ -534,6 +545,23 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                     }) {
                         Icon(if (voiceOutputEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff, contentDescription = "Voice Toggle", tint = cyan)
                     }
+                        IconButton(modifier = Modifier.size(30.dp), onClick = {
+                            jarvisPowerOn = !jarvisPowerOn
+                            if (!jarvisPowerOn) {
+                                onStopSpeak()
+                                try { speechRecognizer?.cancel() } catch (_: Exception) {}
+                                OfflineBrainManager.shutdown()
+                                Toast.makeText(context, "🔴 JARVIS Powered OFF (RAM Freed)", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "🟢 JARVIS Systems Online", Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(
+                                Icons.Default.PowerSettingsNew,
+                                contentDescription = "Master Power",
+                                tint = if (jarvisPowerOn) Color(0xFF00E676) else Color(0xFFFF5252)
+                            )
+                        }
                     IconButton(onClick = { showSettings = true }, modifier = Modifier.size(30.dp)) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings", tint = cyan)
                     }
