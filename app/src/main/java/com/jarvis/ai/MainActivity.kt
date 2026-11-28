@@ -882,7 +882,7 @@ suspend fun selfCodeAndHealGitHub(
             val mid = allLines.size / 2
             for (j in maxOf(0, mid - 60)..minOf(allLines.lastIndex, mid + 60)) picked.add(j)
         }
-        val snippet = picked.sorted().joinToString("\n") { "${it + 1}: ${allLines[it]}" }.take(14000)
+        val snippet = picked.sorted().joinToString("\n") { allLines[it] }.take(24000)
 
         val prompt = """Modify JARVIS AI ($targetPath, total ${allLines.size} lines) for User Request: $instruction
 Output ONLY exact surgical replacement blocks (do NOT include line numbers, do NOT output whole file):
@@ -898,7 +898,7 @@ $snippet"""
         val aiOut = callLLMCodeWriter(client, apiKey, customModel, prompt) ?: ""
         var patched = currentCode
         var patchCount = 0
-        val regex = Regex("<<<SEARCH>>>\\s*\\n([\\s\\S]*?)\\n<<<REPLACE>>>\\s*\\n([\\s\\S]*?)\\n<<<END>>>")
+        val regex = Regex("<<<SEARCH>>>\\s*([\\s\\S]*?)\\s*<<<REPLACE>>>\\s*([\\s\\S]*?)\\s*(?:<<<END>>>|$)")
         fun cleanFence(txt: String): String {
                 val lines = txt.trim('\r', '\n').lines().toMutableList()
                 if (lines.isNotEmpty() && lines.first().trim().startsWith("```")) lines.removeAt(0)
@@ -938,7 +938,7 @@ $snippet"""
             val updatedCode = if (patchCount > 0) patched else if (aiOut.contains("package com.jarvis.ai") && aiOut.length > 5000) aiOut else ""
 
         if (updatedCode.isBlank() || !isBalancedCode(updatedCode)) {
-            return@withContext "❌ कोड जेनरेट नहीं हो सका—कमांड थोड़ा और स्पष्ट लिखें।"
+            return@withContext "❌ कोड पैच विफल (aiLen=${aiOut.length}, patches=$patchCount, bal=${if (updatedCode.isNotBlank()) isBalancedCode(updatedCode) else false}): ${aiOut.take(180)}"
         }
 
         onProgress("🚀 नया कोड GitHub पर पुश कर रहा हूँ...")
