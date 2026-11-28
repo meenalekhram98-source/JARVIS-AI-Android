@@ -1153,9 +1153,7 @@ suspend fun askGemini(
 
                         if (selfCodeTask != null) {
                             withContext(Dispatchers.Main) { onProgress(cleanReply) }
-                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second) { prog ->
-                                withContext(Dispatchers.Main) { onProgress(prog) }
-                            }
+                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, onProgress = { prog -> kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch { onProgress(prog) } })
                         }
                         return@withContext cleanReply
                     }
@@ -1185,18 +1183,16 @@ suspend fun askGemini(
 
                 if (selfCodeTask != null) {
                     withContext(Dispatchers.Main) { onProgress(cleanReply) }
-                    return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second) { prog ->
-                        withContext(Dispatchers.Main) { onProgress(prog) }
-                    }
+                    return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, onProgress = { prog -> kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch { onProgress(prog) } })
                 }
                 return@withContext cleanReply
             } else {
                 lastError = if (lastError.isBlank()) "Fallback HTTP ${res.code}" else "$lastError | Fallback ${res.code}"
             }
-        }
-    } catch (e: Exception) {
+        } catch (e: Exception) {
         lastError = if (lastError.isBlank()) (e.localizedMessage ?: "Connection failed") else "$lastError | ${e.localizedMessage}"
     }
 
-    return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" )"
+    return@withContext "समस्या आई (${lastError.ifBlank { "
+}इंटरनेट या API Key जांचें" )"
 
