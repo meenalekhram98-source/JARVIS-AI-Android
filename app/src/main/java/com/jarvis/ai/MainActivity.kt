@@ -985,26 +985,7 @@ $snippet"""
         val encoded = Base64.encodeToString(updatedCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val putBody = JSONObject().put("message", "JARVIS Self-Code Update").put("content", encoded).apply { if (sha.isNotBlank()) put("sha", sha) }
         val putReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json")
-            .put(putBody.toString().toRequestBody("application/json".toMediaType())).build()
-        val pushErr = client.newCall(putReq).execute().use { res ->
-            if (!res.isSuccessful) "❌ GitHub push fail (${res.code}): ${res.body.string().take(120)}" else ""
-        }
-        if (pushErr.isNotEmpty()) return@withContext pushErr
-        return@withContext "✅ कोड GitHub पर पुश हो गया! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्जन इंस्टॉल करें।"
-    } catch (e: Exception) {
-        return@withContext "❌ सेल्फ-कोडिंग त्रुटि: ${e.message}"
-    }
-}
 
-            .put(putBody.toString().toRequestBody("application/json".toMediaType())).build()
-        client.newCall(putReq).execute().use { res ->
-            if (!res.isSuccessful) return "❌ GitHub push fail (${res.code}): ${res.body.string()?.take(150)}"
-        }
-        "✅ कोड सफलतापूर्वक GitHub पर पुश हो गया है! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्जन इंस्टॉल कर लें।"
-    } catch (e: Exception) {
-        "❌ सेल्फ-कोडिंग में त्रुटि आई: ${e.message}"
-    }
-}
 
 private fun applyAllTags(
     context: Context,
