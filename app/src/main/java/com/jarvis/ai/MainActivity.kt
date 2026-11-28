@@ -782,7 +782,7 @@ suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContex
         val req = Request.Builder().url("https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest").header("Accept", "application/vnd.github+json").build()
         client.newCall(req).execute().use { res ->
             if (!res.isSuccessful) return@withContext null
-            val json = JSONObject(res.body.string() ?: "")
+            val json = JSONObject(res.body?.string() ?: "")
             val assets = json.optJSONArray("assets") ?: return@withContext null
             for (i in 0 until assets.length()) {
                 val asset = assets.optJSONObject(i) ?: continue
@@ -868,7 +868,7 @@ suspend fun pushRawCodeToGitHub(
         var currentSha = ""
         client.newCall(getReq).execute().use { res ->
             if (res.isSuccessful) {
-                currentSha = JSONObject(res.body.string() ?: "{}").optString("sha")
+                currentSha = JSONObject(res.body?.string() ?: "{}").optString("sha")
             }
         }
 
@@ -884,7 +884,7 @@ suspend fun pushRawCodeToGitHub(
             .put(putBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
         client.newCall(putReq).execute().use { res ->
-            if (!res.isSuccessful) return@withContext "GitHub पुश फेल हुआ (${res.code}): ${res.body.string()}"
+            if (!res.isSuccessful) return@withContext "GitHub पुश फेल हुआ (${res.code}): ${res.body?.string()}"
         }
 
         withContext(Dispatchers.Main) { onProgress("⚙️ कोड पुश हो गया! अब 90 सेकंड बिल्ड की प्रतीक्षा कर रहा हूँ...") }
@@ -908,7 +908,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
                 val req = Request.Builder().url(url).header("x-goog-api-key", apiKey.trim()).post(body.toString().toRequestBody("application/json".toMediaType())).build()
                 client.newCall(req).execute().use { res ->
                     if (res.isSuccessful) {
-                        val txt = JSONObject(res.body.string() ?: "{}").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "")
+                        val txt = JSONObject(res.body?.string() ?: "{}").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "")
                         if (!txt.isNullOrBlank()) {
                             rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
                         }
@@ -921,13 +921,11 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
 
     if (rawOut == null) {
         try {
-            val fbBody = JSONObject().put("model", "openai").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Return ONLY complete valid Kotlin code without markdown fences.
-
-$prompt")))
+            val fbBody = JSONObject().put("model", "openai").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Return ONLY complete valid Kotlin code without markdown fences.\n\n$prompt")))
                 val fbReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(fbReq).execute().use { res ->
                 if (res.isSuccessful) {
-                    val rawRes = res.body.string() ?: ""; val txt = if (rawRes.trim().startsWith("{")) JSONObject(rawRes).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawRes
+                    val rawRes = res.body?.string() ?: ""; val txt = if (rawRes.trim().startsWith("{")) JSONObject(rawRes).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawRes
                     if (txt.isNotBlank()) {
                         rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
                     }
@@ -954,7 +952,7 @@ suspend fun selfCodeAndHealGitHub(
     try {
         onProgress("🔍 GitHub से $targetPath पढ़ रहा हूँ...")
         val getReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json").build()
-        val getJson = JSONObject(client.newCall(getReq).execute().use { it.body.string() })
+        val getJson = JSONObject(client.newCall(getReq).execute().use { it.body?.string() })
         val sha = getJson.optString("sha", "")
         val currentCode = String(Base64.decode(getJson.getString("content").replace("\n", ""), Base64.DEFAULT), Charsets.UTF_8)
 
@@ -988,7 +986,7 @@ $snippet"""
         val putReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json")
             .put(putBody.toString().toRequestBody("application/json".toMediaType())).build()
         val pushErr = client.newCall(putReq).execute().use { res ->
-            if (!res.isSuccessful) "❌ GitHub push fail (${res.code}): ${res.body.string().take(120)}" else ""
+            if (!res.isSuccessful) "❌ GitHub push fail (${res.code}): ${res.body?.string().take(120)}" else ""
         }
         if (pushErr.isNotEmpty()) return@withContext pushErr
         return@withContext "✅ कोड GitHub पर पुश हो गया! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्ज़न इंस्टॉल करें।"
