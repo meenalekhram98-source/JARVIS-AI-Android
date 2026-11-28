@@ -958,7 +958,7 @@ private fun applyAllTags(
     }
     Regex("\\[SELFCODE:([\\s\\S]*?)\\]").find(reply)?.let {
         val jsonStr = it.groupValues[1].trim()
-        reply = reply.replace(Regex("\\[SELFCODE:.*?\\]"), "").trim()
+        reply = reply.replace(Regex("\\[SELFCODE:([\\s\\S]*?)\\]"), "").trim()
         try {
             val obj = JSONObject(jsonStr)
             val file = obj.optString("file", "app/src/main/java/com/jarvis/ai/MainActivity.kt")
@@ -967,8 +967,6 @@ private fun applyAllTags(
         } catch (_: Exception) {}
     }
 
-    if (selfCodeTask == null && mode == "CODE" && userMessage.trim().length > 4) { selfCodeTask = Pair("app/src/main/java/com/jarvis/ai/MainActivity.kt", userMessage.trim()) }
-    if (selfCodeTask == null && mode == "CODE" && userMessage.trim().length > 4) { selfCodeTask = Pair("app/src/main/java/com/jarvis/ai/MainActivity.kt", userMessage.trim()) }
     return Pair(reply, selfCodeTask)
 }
 
