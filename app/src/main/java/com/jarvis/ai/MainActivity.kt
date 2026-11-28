@@ -47,6 +47,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -492,6 +493,28 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                 }
             }
 
+            val hudAccent = when (selectedMode) {
+                "CODE" -> Color(0xFF00E676)
+                "STUDY" -> Color(0xFFFFB300)
+                else -> cyan
+            }
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            val batPct = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 85
+            val batIntent = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+            val batTemp = (batIntent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 320) ?: 320) / 10f
+            val activeEngine = if (prefs.getString("primary_engine", "GEMINI") == "OPENROUTER") "OPENROUTER" else "GEMINI 2.5"
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                    .background(Color(0xFF0D1D30), CutCornerShape(8.dp))
+                    .border(1.dp, hudAccent.copy(alpha = 0.4f), CutCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🔋 $batPct% | ${batTemp}°C", color = Color.White, fontSize = 11.sp)
+                Text("📶 5G • ONLINE", color = hudAccent, fontSize = 11.sp)
+                Text("⚡ $activeEngine", color = Color(0xFFFFD54F), fontSize = 11.sp)
+            }
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("JARVIS" to "🤖 AI Brain", "CODE" to "💻 Self-Code", "STUDY" to "📚 Study").forEach { (mode, label) ->
                     val isSelected = selectedMode == mode
@@ -504,17 +527,17 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(label, color = if (isSelected) cyan else Color.LightGray, fontSize = 12.sp)
+                        Text(label, color = if (isSelected) hudAccent else Color.LightGray, fontSize = 12.sp)
                     }
                 }
             }
 
-            Box(modifier = Modifier.fillMaxWidth().height(95.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxWidth().height(132.dp), contentAlignment = Alignment.Center) {
                 Box(
                     modifier = Modifier
-                        .size(76.dp)
+                        .size(112.dp)
                         .scale(pulseScale)
-                        .background(Brush.radialGradient(listOf(if (isListening) Color(0x88FF5252) else Color(0x8845E6FF), Color.Transparent)), CircleShape)
+                        .background(Brush.radialGradient(listOf(if (isListening) Color(0x88FF5252) else hudAccent.copy(alpha = 0.55f), Color.Transparent)), CircleShape)
                         .clickable {
                             if (isListening) {
                                 try { speechRecognizer?.stopListening() } catch (_: Exception) {}
@@ -541,8 +564,8 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                         Box(
                             modifier = Modifier
                                 .widthIn(max = 290.dp)
-                                .background(if (msg.isUser) Color(0xFF087E9B) else Color(0xFF10243A), RoundedCornerShape(16.dp))
-                                .border(1.dp, if (msg.isUser) cyan.copy(alpha = 0.5f) else Color(0xFF1E3A5F), RoundedCornerShape(16.dp))
+                                .background(if (msg.isUser) hudAccent.copy(alpha = 0.28f) else Color(0xFF0D1E32), CutCornerShape(topStart = 12.dp, bottomEnd = 12.dp))
+                                .border(1.dp, if (msg.isUser) hudAccent else hudAccent.copy(alpha = 0.45f), CutCornerShape(topStart = 12.dp, bottomEnd = 12.dp))
                                 .padding(12.dp)
                         ) {
                             Text(text = msg.text, color = Color.White, fontSize = 14.sp)
@@ -551,6 +574,23 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                 }
             }
 
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf("🔋 सिस्टम स्टेटस" to "सिस्टम स्टेटस", "🌐 नेटवर्क चेक" to "नेटवर्क चेक करो", "🛠️ बिल्ड चेक" to "बिल्ड स्टेटस बताओ").forEach { (chipLabel, chipCmd) ->
+                    Box(
+                        modifier = Modifier.weight(1f)
+                            .background(Color(0xFF0F2338), CutCornerShape(8.dp))
+                            .border(1.dp, hudAccent.copy(alpha = 0.5f), CutCornerShape(8.dp))
+                            .clickable { sendQuery(chipCmd) }
+                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(chipLabel, color = Color.White, fontSize = 10.sp, maxLines = 1)
+                    }
+                }
+            }
             Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = inputText,
