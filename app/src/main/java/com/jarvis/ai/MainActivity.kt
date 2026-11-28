@@ -968,6 +968,7 @@ private fun applyAllTags(
     }
 
     if (selfCodeTask == null && mode == "CODE" && userMessage.trim().length > 4) { selfCodeTask = Pair("app/src/main/java/com/jarvis/ai/MainActivity.kt", userMessage.trim()) }
+    if (selfCodeTask == null && mode == "CODE" && userMessage.trim().length > 4) { selfCodeTask = Pair("app/src/main/java/com/jarvis/ai/MainActivity.kt", userMessage.trim()) }
     return Pair(reply, selfCodeTask)
 }
 
