@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import android.os.Environment
 import android.provider.Settings
 import android.speech.RecognitionListener
@@ -91,6 +92,45 @@ var onSpeechFinishedCallback: (() -> Unit)? = null
 
 private const val GITHUB_OWNER = "meenalekhram98-source"
 private const val GITHUB_REPO = "JARVIS-AI-Android"
+
+
+object OfflineBrainManager {
+    private var llm: LlmInference? = null
+    private var loadedPath: String = ""
+
+    fun getModelFile(context: Context): java.io.File {
+        val internal = java.io.File(context.filesDir, "jarvis_offline.bin")
+        if (internal.exists() && internal.length() > 50_000_000L) return internal
+        val dl = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "jarvis_offline.bin")
+        if (dl.exists() && dl.length() > 50_000_000L) return dl
+        return internal
+    }
+
+    fun isReady(context: Context): Boolean = getModelFile(context).let { it.exists() && it.length() > 50_000_000L }
+
+    @Synchronized
+    fun generate(context: Context, userPrompt: String): String? {
+        val modelFile = getModelFile(context)
+        if (!modelFile.exists() || modelFile.length() < 50_000_000L) return null
+        return try {
+            if (llm == null || loadedPath != modelFile.absolutePath) {
+                llm?.close()
+                val opts = LlmInference.LlmInferenceOptions.builder()
+                    .setModelPath(modelFile.absolutePath)
+                    .setMaxTokens(512)
+                    .setTopK(40)
+                    .setTemperature(0.6f)
+                    .build()
+                llm = LlmInference.createFromOptions(context.applicationContext, opts)
+                loadedPath = modelFile.absolutePath
+            }
+            val prompt = "<start_of_turn>user\nYou are JARVIS, an offline AI assistant. Reply concisely in Hindi/Hinglish: $userPrompt<end_of_turn>\n<start_of_turn>model\n"
+            llm?.generateResponse(prompt)?.trim()?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            "Offline Engine Error: ${e.localizedMessage}"
+        }
+    }
+}
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
@@ -1256,5 +1296,9 @@ val modelsToTry = if (cleanKey.isBlank() || preferOr) emptyList() else listOf(
         lastError = if (lastError.isBlank()) (e.localizedMessage ?: "Connection failed") else "$lastError | ${e.localizedMessage}"
     }
 
-    return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" }})"
+    val offlineReply = OfflineBrainManager.generate(context, userMessage)
+        if (!offlineReply.isNullOrBlank()) {
+            return@withContext "🧠 [OFFLINE BRAIN]\n$offlineReply"
+        }
+        return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" }})"
 }
