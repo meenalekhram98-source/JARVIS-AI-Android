@@ -5,6 +5,19 @@ plugins {
 }
 
 android {
+    signingConfigs {
+        create("jarvisSign") {
+            storeFile = file("jarvis_fixed.keystore")
+            storePassword = "android"
+            keyAlias = "jarviskey"
+            keyPassword = "android"
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("jarvisSign")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
