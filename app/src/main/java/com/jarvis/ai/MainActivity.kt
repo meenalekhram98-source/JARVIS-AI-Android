@@ -184,7 +184,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "jarvis_utt")
             tts?.setPitch(0.78f)
             tts?.setSpeechRate(0.98f)
-            val hasHi = text.any { it in '\u0900'..'\u097F' }; tts?.language = java.util.Locale(if (hasHi) "hi" else "en", "IN"); tts?.setSpeechRate(if (text.length > 140) 1.08f else 0.96f); tts?.setPitch(if (hasHi) 0.98f else 1.04f); tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "jarvis_utt")
+            val hasHi = cleanText.any { it in '\u0900'..'\u097F' }; tts?.language = java.util.Locale(if (hasHi) "hi" else "en", "IN"); tts?.setSpeechRate(if (cleanText.length > 140) 1.08f else 0.96f); tts?.setPitch(if (hasHi) 0.98f else 1.04f); tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "jarvis_utt")
         } catch (_: Exception) {}
     }
 
