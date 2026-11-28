@@ -190,114 +190,17 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun speakHindi(text: String) {
         val cleanText = text.replace("*", "").replace("#", "").replace("\"", "").replace("&", "and").replace("<", "").replace(">", "").trim()
-        if (cleanText.isEmpty()) return
-
+        if (cleanText.isEmpty() || !isTtsReady) return
         stopSciFiAudio()
-        try { tts?.stop() } catch (_: Exception) {}
-
-        Thread {
-            try {
-                val reqId = UUID.randomUUID().toString().replace("-", "")
-                val client = OkHttpClient.Builder().readTimeout(10, TimeUnit.SECONDS).build()
-                val request = Request.Builder()
-                    .url(run {
-                        val ticks = (System.currentTimeMillis() / 1000L + 11644473600L)
-                        val rounded = ticks - (ticks % 300L)
-                        val str = "${rounded * 10000000L}6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-                        val sha = java.security.MessageDigest.getInstance("SHA-256").digest(str.toByteArray()).joinToString("") { "%02X".format(it) }
-                        "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&Sec-MS-GEC=$sha&Sec-MS-GEC-Version=1-130.0.2849.68"
-                    })
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")
-                    .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
-                    .build()
-
-                val audioBuffer = ByteArrayOutputStream()
-                val lock = Object()
-                var done = false
-                var failed = false
-
-                val ws = client.newWebSocket(request, object : WebSocketListener() {
-                    override fun onOpen(webSocket: WebSocket, response: Response) {
-                        val cfg = "Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}"
-                        webSocket.send(cfg)
-
-                        val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='hi-IN'><voice name='hi-IN-MadhurNeural'><prosody pitch='-11Hz' rate='+6%'>$cleanText</prosody></voice></speak>"
-                        val msg = "X-RequestId:$reqId\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n$ssml"
-                        webSocket.send(msg)
-                    }
-
-                    override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                        val arr = bytes.toByteArray()
-                        if (arr.size > 2) {
-                            val headerLen = ((arr[0].toInt() and 0xFF) shl 8) or (arr[1].toInt() and 0xFF)
-                            val dataStart = headerLen + 2
-                            if (dataStart < arr.size) {
-                                audioBuffer.write(arr, dataStart, arr.size - dataStart)
-                            }
-                        }
-                    }
-
-                    override fun onMessage(webSocket: WebSocket, textMsg: String) {
-                        if (textMsg.contains("Path:turn.end")) {
-                            synchronized(lock) { done = true; lock.notifyAll() }
-                            webSocket.close(1000, "Done")
-                        }
-                    }
-
-                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                        synchronized(lock) { failed = true; done = true; lock.notifyAll() }
-                    }
-                })
-
-                synchronized(lock) {
-                    if (!done) lock.wait(8000)
-                }
-
-                val audioBytes = audioBuffer.toByteArray()
-                if (failed || audioBytes.isEmpty()) {
-                    // Purani offline TTS voice hata di gayi
-                    return@Thread
-                }
-
-                val outFile = File(cacheDir, "jarvis_scifi.mp3")
-                FileOutputStream(outFile).use { it.write(audioBytes) }
-
-                runOnUiThread {
-                    try {
-                        val mp = MediaPlayer()
-                        mp.setDataSource(outFile.absolutePath)
-                        mp.prepare()
-
-                        // Sci-Fi Metallic + Holographic Chamber Effect
-                        try {
-                            val eq = Equalizer(0, mp.audioSessionId)
-                            eq.enabled = true
-                            val bands = eq.numberOfBands.toInt()
-                            if (bands >= 5) {
-                                eq.setBandLevel(0, (-300).toShort()) // Low rumble cut (highpass)
-                                eq.setBandLevel((bands - 1).toShort(), (400).toShort()) // Crisp metallic treble
-                            }
-                            sciFiEq = eq
-
-                            val rev = PresetReverb(0, mp.audioSessionId)
-                            rev.preset = PresetReverb.PRESET_SMALLROOM
-                            rev.enabled = true
-                            mp.attachAuxEffect(rev.id)
-                            mp.setAuxEffectSendLevel(0.45f)
-                            sciFiReverb = rev
-                        } catch (_: Exception) {}
-
-                        mp.setOnCompletionListener { stopSciFiAudio() }
-                        sciFiPlayer = mp
-                        mp.start()
-                    } catch (_: Exception) {
-                        fallbackOfflineTts(cleanText)
-                    }
-                }
-            } catch (_: Exception) {
-                // Purani offline TTS voice hata di gayi
-            }
-        }.start()
+        try {
+            tts?.stop()
+            val hasHindi = cleanText.any { it in '\u0900'..'\u097F' }
+            tts?.language = if (hasHindi) java.util.Locale("hi", "IN") else java.util.Locale("en", "IN")
+            tts?.setPitch(0.85f)
+            tts?.setSpeechRate(0.98f)
+            val params = Bundle().apply { putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "jarvis_utt") }
+            tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "jarvis_utt")
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
@@ -917,7 +820,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
 
     if (rawOut == null) {
         try {
-            val fbBody = JSONObject().put("model", "openai").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Return ONLY complete valid Kotlin code without markdown fences.\n\n$prompt")))
+            val fbBody = JSONObject().put("model", "mistral").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Return ONLY complete valid Kotlin code without markdown fences.\n\n$prompt")))
                 val fbReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(fbReq).execute().use { res ->
                 if (res.isSuccessful) {
@@ -1155,7 +1058,7 @@ suspend fun askGemini(
     try {
         val fullPrompt = "$systemInstruction\n\nUser: $userMessage"
         val encodedPrompt = URLEncoder.encode(fullPrompt, "UTF-8")
-        val fbPayload = JSONObject().put("model", "openai").put("messages", JSONArray().put(JSONObject().put("role", "system").put("content", systemInstruction)).put(JSONObject().put("role", "user").put("content", userMessage))).toString().toRequestBody("application/json".toMediaType()); val fallbackReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbPayload).build()
+        val fbPayload = JSONObject().put("model", "mistral").put("messages", JSONArray().put(JSONObject().put("role", "system").put("content", systemInstruction)).put(JSONObject().put("role", "user").put("content", userMessage))).toString().toRequestBody("application/json".toMediaType()); val fallbackReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbPayload).build()
         val res = client.newCall(fallbackReq).execute()
             val rawFb = res.body?.string() ?: ""; val rawReply = if (rawFb.trim().startsWith("{")) JSONObject(rawFb).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawFb
                 res.close()
