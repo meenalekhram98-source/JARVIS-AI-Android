@@ -809,44 +809,54 @@ suspend fun pushRawCodeToGitHub(
 suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel: String, prompt: String): String? = withContext(Dispatchers.IO) {
     val cleanKey = apiKey.trim()
     var rawOut: String? = null
-
-    if (cleanKey.isNotBlank()) {
-        val models = listOf(customModel, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro").distinct()
+    if (cleanKey.startsWith("sk-or-")) {
+        try {
+            val orBody = JSONObject().put("model", customModel.ifBlank { "google/gemini-2.5-flash" })
+                .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
+            val orReq = Request.Builder().url("https://openrouter.ai/api/v1/chat/completions")
+                .header("Authorization", "Bearer $cleanKey")
+                .post(orBody.toString().toRequestBody("application/json".toMediaType())).build()
+            client.newCall(orReq).execute().use { res ->
+                if (res.isSuccessful) {
+                    val txt = JSONObject(res.body?.string() ?: "{}").optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "")
+                    if (!txt.isNullOrBlank()) rawOut = txt.trim()
+                }
+            }
+        } catch (_: Exception) {}
+    }
+    if (rawOut == null && cleanKey.isNotBlank()) {
+        val models = listOf(customModel, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro").filter { it.isNotBlank() && !it.contains("/") }.distinct()
         for (model in models) {
             try {
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
                 val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                val req = Request.Builder().url(url).header("x-goog-api-key", apiKey.trim()).post(body.toString().toRequestBody("application/json".toMediaType())).build()
+                val req = Request.Builder().url(url).post(body.toString().toRequestBody("application/json".toMediaType())).build()
                 client.newCall(req).execute().use { res ->
                     if (res.isSuccessful) {
                         val txt = JSONObject(res.body?.string() ?: "{}").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "")
-                        if (!txt.isNullOrBlank()) {
-                            rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
-                        }
+                        if (!txt.isNullOrBlank()) rawOut = txt.trim()
                     }
                 }
                 if (rawOut != null) break
             } catch (_: Exception) {}
         }
     }
-
     if (rawOut == null) {
         try {
-            val fbBody = JSONObject().put("model", "mistral").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "$prompt")))
-                val fbReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbBody.toString().toRequestBody("application/json".toMediaType())).build()
+            val fbBody = JSONObject().put("model", "openai").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
+            val fbReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(fbReq).execute().use { res ->
                 if (res.isSuccessful) {
-                    val rawRes = res.body?.string() ?: ""; val txt = if (rawRes.trim().startsWith("{")) JSONObject(rawRes).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawRes
-                    if (txt.isNotBlank()) {
-                        rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
-                    }
+                    val rawRes = res.body?.string() ?: ""
+                    val txt = if (rawRes.trim().startsWith("{")) JSONObject(rawRes).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawRes
+                    if (txt.isNotBlank()) rawOut = txt.trim()
                 }
             }
         } catch (_: Exception) {}
     }
-
     rawOut
 }
+
 suspend fun selfCodeAndHealGitHub(
     apiKey: String,
     githubToken: String,
