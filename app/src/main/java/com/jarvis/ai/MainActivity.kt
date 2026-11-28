@@ -342,13 +342,13 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         }
 
         val cmdResult = try {
-            if (selectedMode == "Self-Code") null else handleDeviceCommand(context, query)
+            if (selectedMode == "CODE") null else handleDeviceCommand(context, query)
         } catch (e: Exception) {
             "कमांड चलाने में समस्या आई: ${e.localizedMessage}"
         }
 
         if (cmdResult == "NEED_CONTACTS_PERMISSION") {
-            pendingContactQuery = if (selectedMode == "Self-Code") null else query
+            pendingContactQuery = if (selectedMode == "CODE") null else query
             contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
             return
         }
