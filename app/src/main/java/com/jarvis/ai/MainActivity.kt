@@ -865,7 +865,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
             } catch (ex: Exception) { err = "OR_EX:${ex.message}" }
         }
     } else if (k.isNotBlank()) {
-        for (m in listOf(customModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite").map { if (it.contains("pro") || it.contains("latest")) "gemini-2.5-flash" else it }.filter { it.isNotBlank() && !it.contains("/") }.distinct()) {
+        for (m in listOf("gemini-2.5-flash").filter { it.isNotBlank() && !it.contains("/") }.distinct()) {
             try {
                 val b = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))).put("generationConfig", JSONObject().put("temperature", 0.15).put("maxOutputTokens", 8192))
                 val r = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$k").post(b.toString().toRequestBody("application/json".toMediaType())).build()
