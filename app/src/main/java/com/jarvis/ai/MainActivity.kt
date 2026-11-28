@@ -557,7 +557,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                             }
                         }) {
                             Icon(
-                                Icons.Default.PowerSettingsNew,
+                                androidx.compose.material.icons.rounded.PowerSettingsNew,
                                 contentDescription = "Master Power",
                                 tint = if (jarvisPowerOn) Color(0xFF00E676) else Color(0xFFFF5252)
                             )
