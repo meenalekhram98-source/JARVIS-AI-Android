@@ -865,7 +865,12 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
             } catch (ex: Exception) { err = "OR_EX:${ex.message}" }
         }
     } else if (k.isNotBlank()) {
-        for (m in listOf("gemini-2.5-flash").filter { it.isNotBlank() && !it.contains("/") }.distinct()) {
+        val discovered = try {
+                val mJson = JSONObject(client.newCall(Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models?key=$k").build()).execute().use { it.body?.string() ?: "{}" })
+                val arr = mJson.optJSONArray("models")
+                (0 until (arr?.length() ?: 0)).mapNotNull { arr?.optJSONObject(it) }.filter { (it.optJSONArray("supportedGenerationMethods")?.toString() ?: "").contains("generateContent") }.map { it.optString("name", "").removePrefix("models/") }.filter { it.contains("flash") && !it.contains("8b") && !it.contains("image") && !it.contains("audio") }
+            } catch (_: Exception) { emptyList() }
+            for (m in (listOf(customModel) + discovered + listOf("gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest")).filter { it.isNotBlank() && !it.contains("/") }.distinct()) {
             try {
                 val b = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))).put("generationConfig", JSONObject().put("temperature", 0.15).put("maxOutputTokens", 8192))
                 val r = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$k").post(b.toString().toRequestBody("application/json".toMediaType())).build()
