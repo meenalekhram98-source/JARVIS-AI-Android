@@ -1059,7 +1059,7 @@ suspend fun askGemini(
     try {
         val fullPrompt = "$systemInstruction\n\nUser: $userMessage"
         val encodedPrompt = URLEncoder.encode(fullPrompt, "UTF-8")
-        val fbPayload = JSONObject().put("model", "mistral").put("messages", JSONArray().put(JSONObject().put("role", "system").put("content", systemInstruction)).put(JSONObject().put("role", "user").put("content", userMessage))).toString().toRequestBody("application/json".toMediaType()); val fallbackReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbPayload).build()
+        val fbPrompt = java.net.URLEncoder.encode("You are JARVIS, personal AI assistant of Lekhram Meena. Reply concisely in Hindi/Hinglish. User: " + userMessage, "UTF-8"); val fallbackReq = Request.Builder().url("https://text.pollinations.ai/" + fbPrompt).get().build()
         val res = client.newCall(fallbackReq).execute()
             val rawFb = res.body?.string() ?: ""; val rawReply = if (rawFb.trim().startsWith("{")) JSONObject(rawFb).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawFb
                 res.close()
