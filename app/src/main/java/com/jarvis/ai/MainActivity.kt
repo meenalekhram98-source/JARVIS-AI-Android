@@ -479,7 +479,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
 
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp),
+                modifier = Modifier.weight(0.55f).fillMaxWidth().padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(messages) { msg ->
@@ -502,7 +502,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                     value = inputText,
                     onValueChange = { inputText = it },
                     placeholder = { Text("JARVIS से पूछें या खुद को अपग्रेड करने को कहें...", color = Color.Gray, fontSize = 14.sp) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(0.55f),
                     shape = RoundedCornerShape(20.dp),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = cyan, unfocusedBorderColor = Color(0xFF1E3A5F), focusedTextColor = Color.White, unfocusedTextColor = Color.White),
                     singleLine = true
