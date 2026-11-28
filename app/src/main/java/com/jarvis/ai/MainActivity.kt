@@ -300,7 +300,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         val savedQuery = pendingContactQuery
-        pendingContactQuery = if (selectedMode == \"Self-Code\") null else null
+        pendingContactQuery = null
         if (granted && savedQuery != null) {
             retryQueryCallback?.invoke(savedQuery)
         } else if (!granted) {
@@ -348,7 +348,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         }
 
         if (cmdResult == "NEED_CONTACTS_PERMISSION") {
-            pendingContactQuery = query
+            pendingContactQuery = if (selectedMode == "Self-Code") null else query
             contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
             return
         }
