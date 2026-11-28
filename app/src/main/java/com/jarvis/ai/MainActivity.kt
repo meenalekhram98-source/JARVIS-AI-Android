@@ -1175,8 +1175,9 @@ suspend fun askGemini(
             .url("https://text.pollinations.ai/$encodedPrompt")
             .get()
             .build()
-        client.newCall(fallbackReq).execute().use { res ->
-            val rawReply = res.body.string() ?: ""
+        val res = client.newCall(fallbackReq).execute()
+            val rawReply = res.body?.string() ?: ""
+                res.close()
             if (res.isSuccessful && rawReply.isNotBlank()) {
                 val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
                 val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(1500)
