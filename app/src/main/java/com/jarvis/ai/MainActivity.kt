@@ -166,7 +166,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     var apiKey by remember { mutableStateOf(prefs.getString("gemini_api_key", "") ?: "") }
     var githubToken by remember { mutableStateOf(prefs.getString("github_token", "") ?: "") }
     var customModel by remember { mutableStateOf(prefs.getString("gemini_model", "gemini-2.5-flash") ?: "gemini-2.5-flash") }
-    var showSettings by remember { mutableStateOf(apiKey.isBlank()) }
+    var showSettings by remember { mutableStateOf(false) }
     var showDirectPush by remember { mutableStateOf(false) }
 
     var inputText by remember { mutableStateOf("") }
@@ -746,7 +746,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
     val cleanKey = apiKey.trim()
     var rawOut: String? = null
 
-    if (cleanKey.isNotBlank()) {
+    if (false) {
         val models = listOf(customModel, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro").distinct()
         for (model in models) {
             try {
@@ -814,7 +814,7 @@ new updated lines
 <<<END>>>
 
 File content:
-$currentCode"""
+${currentCode.take(12000)}"""
 
         val aiOut = callLLMCodeWriter(client, apiKey, customModel, prompt) ?: ""
         val updatedCode = if (aiOut.contains("<<<SEARCH>>>") && aiOut.contains("<<<REPLACE>>>")) {
