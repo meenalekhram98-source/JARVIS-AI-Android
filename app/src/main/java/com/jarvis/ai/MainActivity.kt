@@ -794,99 +794,58 @@ suspend fun selfCodeAndHealGitHub(
     onProgress: suspend (String) -> Unit
 ): String = withContext(Dispatchers.IO) {
     val token = githubToken.trim()
-    if (token.isBlank()) return@withContext "सर, सेल्फ-कोडिंग के लिए पहले Settings (⚙️) में अपना GitHub Token डाल दें।"
-    val client = OkHttpClient.Builder().connectTimeout(45, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
-
-    try {
+    if (token.isBlank()) return "❌ कृपया Settings (⚙️) में अपना GitHub Token डालें।"
+    val client = OkHttpClient.Builder().connectTimeout(60, TimeUnit.SECONDS).readTimeout(180, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).build()
+    val filePath = "app/src/main/java/com/jarvis/ai/MainActivity.kt"
+    val apiUrl = "https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/contents/$filePath"
+    return try {
         onProgress("🔍 GitHub से $filePath पढ़ रहा हूँ...")
-        val fileUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/contents/$filePath"
-
-        val getReq = Request.Builder().url(fileUrl)
-            .header("Authorization", "Bearer $token")
-            .header("Accept", "application/vnd.github+json")
-            .build()
-        var currentCode = ""
-        var currentSha = ""
-        client.newCall(getReq).execute().use { res ->
-            val raw = res.body?.string() ?: ""
-            if (!res.isSuccessful) return@withContext "GitHub फाइल पढ़ने में त्रुटि (${res.code}): $raw"
-            val json = JSONObject(raw)
-            currentSha = json.optString("sha")
-            val encoded = json.optString("content").replace("\n", "")
-            currentCode = String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8)
-        }
+        val getReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json").build()
+        val getJson = JSONObject(client.newCall(getReq).execute().body?.string() ?: "{}")
+        val sha = getJson.optString("sha", "")
+        val currentCode = String(Base64.decode(getJson.getString("content").replace("\n", ""), Base64.DEFAULT), Charsets.UTF_8)
 
         onProgress("🧠 नया और एरर-फ्री कोड लिख रहा हूँ...")
-        val codePrompt = """
-            You are an expert Android Kotlin & Jetpack Compose engineer maintaining the JARVIS AI Android app.
-            Modify the following file strictly according to the user's instruction.
-            CRITICAL RULES:
-            - Output ONLY the complete, valid Kotlin source code for the entire file (no markdown fences, no explanations).
-            - Ensure every opening `{` and `(` has a matching closing `}` and `)`.
-            - Keep all existing working features, imports, and signatures intact unless asked to change them.
-            
-            Instruction: $instruction
-            
-            Current File ($filePath):
-            $currentCode
-        """.trimIndent()
+        val prompt = """You are an expert Android Kotlin Jetpack Compose developer modifying JARVIS AI.
+User Request: $userRequest
 
-        var newCode = callLLMCodeWriter(client, apiKey, customModel, codePrompt)
-            ?: return@withContext "कोड जेनरेट नहीं हो सका—कृपया Gemini API Key जांचें।"
+Rules:
+1. Do NOT output the entire file. Output ONLY the exact block to replace in this exact format:
+<<<SEARCH>>>
+exact existing lines from MainActivity.kt
+<<<REPLACE>>>
+new updated lines
+<<<END>>>
+2. Keep SEARCH short (5 to 25 lines) and 100% character-for-character identical to the existing file.
+3. Ensure valid Kotlin syntax with balanced braces and no hardcoded ghp_ or AIzaSy/AQ. keys.
 
-        if (!isBalancedCode(newCode) || !newCode.contains("package com.jarvis.ai")) {
-            onProgress("⚠️ ब्रैकेट असंतुलन मिला, कोड को ऑटो-रिपेयर कर रहा हूँ...")
-            newCode = callLLMCodeWriter(client, apiKey, customModel, "Fix any unmatched curly braces `{}` or parentheses `()` in this Kotlin file and return ONLY the complete valid Kotlin code:\n\n$newCode") ?: ""
-            if (!isBalancedCode(newCode) || !newCode.contains("package com.jarvis.ai")) {
-                return@withContext "सुरक्षा कारणों से कमिट रोका गया: जेनरेट किए गए कोड में ब्रैकेट बैलेंस सही नहीं था।"
-            }
+MainActivity.kt:
+$currentCode"""
+
+        val aiOut = callLLMCodeWriter(client, apiKey, customModel, prompt) ?: ""
+        val updatedCode = if (aiOut.contains("<<<SEARCH>>>") && aiOut.contains("<<<REPLACE>>>")) {
+            val s = aiOut.substringAfter("<<<SEARCH>>>").substringBefore("<<<REPLACE>>>").trim("\r", "\n")
+            val r = aiOut.substringAfter("<<<REPLACE>>>").substringBefore("<<<END>>>").trim("\r", "\n")
+            if (s.isNotBlank() && currentCode.contains(s)) currentCode.replaceFirst(s, r) else ""
+        } else if (aiOut.contains("package com.jarvis.ai") && aiOut.length > 5000) {
+            aiOut
+        } else ""
+
+        if (updatedCode.isBlank() || !isBalancedCode(updatedCode)) {
+            return "❌ कोड जेनरेट नहीं हो सका या मैच नहीं हुआ—कृपया कमांड थोड़ा और स्पष्ट लिखें।"
         }
 
-        onProgress("🚀 कोड को GitHub पर पुश कर रहा हूँ...")
-        val putBody = JSONObject().apply {
-            put("message", "JARVIS Self-Code: ${instruction.take(50)}")
-            put("content", Base64.encodeToString(newCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
-            put("sha", currentSha)
-            put("branch", "main")
-        }
-        val putReq = Request.Builder().url(fileUrl)
-            .header("Authorization", "Bearer $token")
-            .header("Accept", "application/vnd.github+json")
-            .put(putBody.toString().toRequestBody("application/json".toMediaType()))
-            .build()
+        onProgress("🚀 नया कोड GitHub पर पुश कर रहा हूँ...")
+        val encoded = Base64.encodeToString(updatedCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val putBody = JSONObject().put("message", "JARVIS Self-Code Update").put("content", encoded).apply { if (sha.isNotBlank()) put("sha", sha) }
+        val putReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json")
+            .put(putBody.toString().toRequestBody("application/json".toMediaType())).build()
         client.newCall(putReq).execute().use { res ->
-            if (!res.isSuccessful) return@withContext "GitHub कमिट फेल हुआ (${res.code}): ${res.body?.string()}"
+            if (!res.isSuccessful) return "❌ GitHub push fail (${res.code}): ${res.body?.string()?.take(150)}"
         }
-
-        onProgress("⚙️ GitHub Actions बिल्ड की निगरानी कर रहा हूँ (लगभग 90 सेकंड)...")
-        delay(85_000)
-
-        val runsUrl = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/actions/runs?per_page=1"
-        val runsReq = Request.Builder().url(runsUrl).header("Authorization", "Bearer $token").build()
-        client.newCall(runsReq).execute().use { res ->
-            val runsJson = JSONObject(res.body?.string() ?: "{}")
-            val latestRun = runsJson.optJSONArray("workflow_runs")?.optJSONObject(0)
-            val conclusion = latestRun?.optString("conclusion") ?: ""
-            if (conclusion == "failure") {
-                onProgress("🛠️ बिल्ड में एरर आया है—मैं खुद इसे पिछले स्टेबल वर्जन पर रीस्टोर कर रहा हूँ...")
-                val rollbackBody = JSONObject().apply {
-                    put("message", "JARVIS Auto-Rollback to last stable build")
-                    put("content", Base64.encodeToString(currentCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
-                    put("branch", "main")
-                }
-                client.newCall(getReq).execute().use { latestFileRes ->
-                    val latestSha = JSONObject(latestFileRes.body?.string() ?: "{}").optString("sha")
-                    rollbackBody.put("sha", latestSha)
-                }
-                val rbReq = Request.Builder().url(fileUrl).header("Authorization", "Bearer $token").put(rollbackBody.toString().toRequestBody("application/json".toMediaType())).build()
-                client.newCall(rbReq).execute().close()
-                return@withContext "नए कोड में कंपाइल एरर आया था, इसलिए मैंने खुद ही पिछले स्टेबल वर्जन पर सेफ रोलबैक कर दिया है सर।"
-            }
-        }
-
-        return@withContext "✅ कोडिंग और बिल्ड सफल रहा लेखराम जी! अब बस 'अपडेट चेक करो' बोलें या ऊपर अपडेट आइकन दबाएं।"
+        "✅ कोड सफलतापूर्वक GitHub पर पुश हो गया है! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्जन इंस्टॉल कर लें।"
     } catch (e: Exception) {
-        return@withContext "सेल्फ-कोडिंग में त्रुटि आई: ${e.localizedMessage}"
+        "❌ सेल्फ-कोडिंग में त्रुटि आई: ${e.message}"
     }
 }
 
