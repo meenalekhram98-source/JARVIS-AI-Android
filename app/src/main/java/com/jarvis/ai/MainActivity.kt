@@ -110,7 +110,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     val charging = st == android.os.BatteryManager.BATTERY_STATUS_CHARGING
                     if (lvl in 1..15 && !charging && !warned15) {
                         warned15 = true
-                        tts?.speak("Lekhram Sir, battery $lvl percent bachi hai. Power saving mode on kar doon?", TextToSpeech.QUEUE_FLUSH, null, "bat_alert")
+                        speakHindi("Lekhram Sir, battery $lvl percent bachi hai. Power saving mode on kar doon?")
                     } else if (lvl > 20) warned15 = false
                 }
             }, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
@@ -204,7 +204,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 val reqId = UUID.randomUUID().toString().replace("-", "")
                 val client = OkHttpClient.Builder().readTimeout(10, TimeUnit.SECONDS).build()
                 val request = Request.Builder()
-                    .url("wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4")
+                    .url(run {
+                        val ticks = (System.currentTimeMillis() / 1000L + 11644473600L)
+                        val rounded = ticks - (ticks % 300L)
+                        val str = "${rounded * 10000000L}6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+                        val sha = java.security.MessageDigest.getInstance("SHA-256").digest(str.toByteArray()).joinToString("") { "%02X".format(it) }
+                        "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&Sec-MS-GEC=$sha&Sec-MS-GEC-Version=1-130.0.2849.68"
+                    })
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")
                     .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
                     .build()
@@ -253,7 +259,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
                 val audioBytes = audioBuffer.toByteArray()
                 if (failed || audioBytes.isEmpty()) {
-                    runOnUiThread { fallbackOfflineTts(cleanText) }
+                    // Purani offline TTS voice hata di gayi
                     return@Thread
                 }
 
@@ -293,7 +299,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     }
                 }
             } catch (_: Exception) {
-                runOnUiThread { fallbackOfflineTts(cleanText) }
+                // Purani offline TTS voice hata di gayi
             }
         }.start()
     }
