@@ -515,29 +515,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                 Text("📶 5G • ONLINE", color = hudAccent, fontSize = 11.sp)
                 Text("⚡ $activeEngine", color = Color(0xFFFFD54F), fontSize = 11.sp)
             }
-            val hudAccent = when (selectedMode) {
-                "CODE" -> Color(0xFF00E676)
-                "STUDY" -> Color(0xFFFFB300)
-                else -> cyan
-            }
-            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
-            val batPct = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 85
-            val batIntent = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
-            val batTemp = (batIntent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 320) ?: 320) / 10f
-            val activeEngine = if (prefs.getString("primary_engine", "GEMINI") == "OPENROUTER") "OPENROUTER" else "GEMINI 2.5"
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
-                    .background(Color(0xFF0D1D30), CutCornerShape(8.dp))
-                    .border(1.dp, hudAccent.copy(alpha = 0.4f), CutCornerShape(8.dp))
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("🔋 $batPct% | ${batTemp}°C", color = Color.White, fontSize = 11.sp)
-                Text("📶 5G • ONLINE", color = hudAccent, fontSize = 11.sp)
-                Text("⚡ $activeEngine", color = Color(0xFFFFD54F), fontSize = 11.sp)
-            }
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            
                 listOf("JARVIS" to "🤖 AI Brain", "CODE" to "💻 Self-Code", "STUDY" to "📚 Study").forEach { (mode, label) ->
                     val isSelected = selectedMode == mode
                     Box(
