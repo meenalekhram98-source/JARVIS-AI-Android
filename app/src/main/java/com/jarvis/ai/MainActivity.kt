@@ -592,23 +592,6 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                     }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                listOf("🔋 सिस्टम स्टेटस" to "सिस्टम स्टेटस", "🌐 नेटवर्क चेक" to "नेटवर्क चेक करो", "🛠️ बिल्ड चेक" to "बिल्ड स्टेटस बताओ").forEach { (chipLabel, chipCmd) ->
-                    Box(
-                        modifier = Modifier.weight(1f)
-                            .background(Color(0xFF0F2338), CutCornerShape(8.dp))
-                            .border(1.dp, hudAccent.copy(alpha = 0.5f), CutCornerShape(8.dp))
-                            .clickable { sendQuery(chipCmd) }
-                            .padding(vertical = 6.dp, horizontal = 4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(chipLabel, color = Color.White, fontSize = 10.sp, maxLines = 1)
-                    }
-                }
-            }
             Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = inputText,
@@ -882,7 +865,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
             } catch (ex: Exception) { err = "OR_EX:${ex.message}" }
         }
     } else if (k.isNotBlank()) {
-        for (m in listOf(customModel, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro").filter { it.isNotBlank() && !it.contains("/") }.distinct()) {
+        for (m in listOf(customModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite").map { if (it.contains("pro") || it.contains("latest")) "gemini-2.5-flash" else it }.filter { it.isNotBlank() && !it.contains("/") }.distinct()) {
             try {
                 val b = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))).put("generationConfig", JSONObject().put("temperature", 0.15).put("maxOutputTokens", 8192))
                 val r = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$k").post(b.toString().toRequestBody("application/json".toMediaType())).build()
