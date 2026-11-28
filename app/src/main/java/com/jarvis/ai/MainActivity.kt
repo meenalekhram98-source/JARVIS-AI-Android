@@ -1153,7 +1153,7 @@ suspend fun askGemini(
 
                         if (selfCodeTask != null) {
                             withContext(Dispatchers.Main) { onProgress(cleanReply) }
-                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, onProgress = { prog -> kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch { onProgress(prog) } })
+                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, { prog -> withContext(Dispatchers.Main) { onProgress(prog) } }
                         }
                         return@withContext cleanReply
                     }
@@ -1183,7 +1183,7 @@ suspend fun askGemini(
 
                 if (selfCodeTask != null) {
                     withContext(Dispatchers.Main) { onProgress(cleanReply) }
-                    return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, onProgress = { prog -> kotlinx.coroutines.CoroutineScope(Dispatchers.Main).launch { onProgress(prog) } })
+                    return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, { prog -> withContext(Dispatchers.Main) { onProgress(prog) } }
                 }
                 return@withContext cleanReply
             } else {
