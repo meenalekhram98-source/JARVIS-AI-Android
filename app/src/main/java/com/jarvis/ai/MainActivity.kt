@@ -516,7 +516,8 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                 Text("⚡ $activeEngine", color = Color(0xFFFFD54F), fontSize = 11.sp)
             }
             
-                listOf("JARVIS" to "🤖 AI Brain", "CODE" to "💻 Self-Code", "STUDY" to "📚 Study").forEach { (mode, label) ->
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("JARVIS" to "🤖 AI Brain", "CODE" to "💻 Self-Code", "STUDY" to "📚 Study").forEach { (mode, label) ->
                     val isSelected = selectedMode == mode
                     Box(
                         modifier = Modifier
