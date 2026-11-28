@@ -413,10 +413,10 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    IconButton(onClick = { showDirectPush = true }) {
+                    IconButton(onClick = { showDirectPush = true }, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.Default.Code, contentDescription = "Direct Code Push", tint = cyan)
                     }
-                    IconButton(onClick = {
+                    IconButton(modifier = Modifier.size(34.dp), onClick = {
                         coroutineScope.launch {
                             Toast.makeText(context, "अपडेट चेक कर रहा है...", Toast.LENGTH_SHORT).show()
                             val upd = checkGitHubUpdate("")
@@ -426,13 +426,13 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
                     }) {
                         Icon(Icons.Default.SystemUpdate, contentDescription = "Check Update", tint = if (pendingUpdate != null) Color(0xFFFFD54F) else cyan)
                     }
-                    IconButton(onClick = {
+                    IconButton(modifier = Modifier.size(34.dp), onClick = {
                         voiceOutputEnabled = !voiceOutputEnabled
                         if (!voiceOutputEnabled) onStopSpeak()
                     }) {
                         Icon(if (voiceOutputEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff, contentDescription = "Voice Toggle", tint = cyan)
                     }
-                    IconButton(onClick = { showSettings = true }) {
+                    IconButton(onClick = { showSettings = true }, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings", tint = cyan)
                     }
                 }
