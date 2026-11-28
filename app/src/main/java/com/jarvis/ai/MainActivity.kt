@@ -161,7 +161,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val cleanText = text.replace("*", "").replace("#", "").trim()
             val params = Bundle()
             params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "jarvis_utt")
-            tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "jarvis_utt")
+            tts?.setPitch(0.78f); tts?.setSpeechRate(0.98f); tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "jarvis_utt")
         } catch (_: Exception) {}
     }
 
