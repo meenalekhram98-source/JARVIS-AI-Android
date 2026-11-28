@@ -768,11 +768,13 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
 
     if (rawOut == null) {
         try {
-            val encoded = URLEncoder.encode("Return ONLY complete valid Kotlin code without markdown fences.\n\n$prompt", "UTF-8")
-            val fbReq = Request.Builder().url("https://text.pollinations.ai/$encoded").get().build()
+            val fbBody = JSONObject().put("model", "openai").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Return ONLY complete valid Kotlin code without markdown fences.
+
+$prompt")))
+                val fbReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(fbReq).execute().use { res ->
                 if (res.isSuccessful) {
-                    val txt = res.body?.string() ?: ""
+                    val rawRes = res.body?.string() ?: ""; val txt = if (rawRes.trim().startsWith("{")) JSONObject(rawRes).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawRes
                     if (txt.isNotBlank()) {
                         rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
                     }
