@@ -629,7 +629,7 @@ suspend fun checkGitHubUpdate(lastInstalledAt: String): UpdateInfo? = withContex
         val req = Request.Builder().url("https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest").header("Accept", "application/vnd.github+json").build()
         client.newCall(req).execute().use { res ->
             if (!res.isSuccessful) return@withContext null
-            val json = JSONObject(res.body?.string() ?: "")
+            val json = JSONObject(res.body.string() ?: "")
             val assets = json.optJSONArray("assets") ?: return@withContext null
             for (i in 0 until assets.length()) {
                 val asset = assets.optJSONObject(i) ?: continue
@@ -715,7 +715,7 @@ suspend fun pushRawCodeToGitHub(
         var currentSha = ""
         client.newCall(getReq).execute().use { res ->
             if (res.isSuccessful) {
-                currentSha = JSONObject(res.body?.string() ?: "{}").optString("sha")
+                currentSha = JSONObject(res.body.string() ?: "{}").optString("sha")
             }
         }
 
@@ -731,7 +731,7 @@ suspend fun pushRawCodeToGitHub(
             .put(putBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
         client.newCall(putReq).execute().use { res ->
-            if (!res.isSuccessful) return@withContext "GitHub पुश फेल हुआ (${res.code}): ${res.body?.string()}"
+            if (!res.isSuccessful) return@withContext "GitHub पुश फेल हुआ (${res.code}): ${res.body.string()}"
         }
 
         withContext(Dispatchers.Main) { onProgress("⚙️ कोड पुश हो गया! अब 90 सेकंड बिल्ड की प्रतीक्षा कर रहा हूँ...") }
@@ -755,7 +755,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
                 val req = Request.Builder().url(url).header("x-goog-api-key", apiKey.trim()).post(body.toString().toRequestBody("application/json".toMediaType())).build()
                 client.newCall(req).execute().use { res ->
                     if (res.isSuccessful) {
-                        val txt = JSONObject(res.body?.string() ?: "{}").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "")
+                        val txt = JSONObject(res.body.string() ?: "{}").optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "")
                         if (!txt.isNullOrBlank()) {
                             rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
                         }
@@ -774,7 +774,7 @@ $prompt")))
                 val fbReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(fbReq).execute().use { res ->
                 if (res.isSuccessful) {
-                    val rawRes = res.body?.string() ?: ""; val txt = if (rawRes.trim().startsWith("{")) JSONObject(rawRes).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawRes
+                    val rawRes = res.body.string() ?: ""; val txt = if (rawRes.trim().startsWith("{")) JSONObject(rawRes).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawRes
                     if (txt.isNotBlank()) {
                         rawOut = txt.replace(Regex("^```[a-zA-Z]*\\n?"), "").replace(Regex("\\n?```$"), "").trim()
                     }
@@ -792,47 +792,39 @@ suspend fun selfCodeAndHealGitHub(
     filePath: String,
     instruction: String,
     onProgress: suspend (String) -> Unit
-): String = withContext(Dispatchers.IO) {
     val token = githubToken.trim()
-    if (token.isBlank()) return "❌ कृपया Settings (⚙️) में अपना GitHub Token डालें।"
+    if (token.isBlank()) return@withContext "❌ कृपया Settings (⚙️) में अपना GitHub Token डालें।"
     val client = OkHttpClient.Builder().connectTimeout(60, TimeUnit.SECONDS).readTimeout(180, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).build()
-    val filePath = "app/src/main/java/com/jarvis/ai/MainActivity.kt"
-    val apiUrl = "https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/contents/$filePath"
-    return try {
-        onProgress("🔍 GitHub से $filePath पढ़ रहा हूँ...")
+    val targetPath = filePath.ifBlank { "app/src/main/java/com/jarvis/ai/MainActivity.kt" }
+    val apiUrl = "https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/contents/$targetPath"
+    try {
+        onProgress("🔍 GitHub से $targetPath पढ़ रहा हूँ...")
         val getReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json").build()
-        val getJson = JSONObject(client.newCall(getReq).execute().body?.string() ?: "{}")
+        val getJson = JSONObject(client.newCall(getReq).execute().use { it.body.string() })
         val sha = getJson.optString("sha", "")
         val currentCode = String(Base64.decode(getJson.getString("content").replace("\n", ""), Base64.DEFAULT), Charsets.UTF_8)
 
         onProgress("🧠 नया और एरर-फ्री कोड लिख रहा हूँ...")
-        val prompt = """You are an expert Android Kotlin Jetpack Compose developer modifying JARVIS AI.
-User Request: $userRequest
-
-Rules:
-1. Do NOT output the entire file. Output ONLY the exact block to replace in this exact format:
+        val prompt = """Modify JARVIS AI $targetPath for User Request: $instruction
+Output ONLY the exact replacement block in this format (do NOT output the whole file):
 <<<SEARCH>>>
-exact existing lines from MainActivity.kt
+exact existing lines (5 to 20 lines, 100% identical)
 <<<REPLACE>>>
 new updated lines
 <<<END>>>
-2. Keep SEARCH short (5 to 25 lines) and 100% character-for-character identical to the existing file.
-3. Ensure valid Kotlin syntax with balanced braces and no hardcoded ghp_ or AIzaSy/AQ. keys.
 
-MainActivity.kt:
+File content:
 $currentCode"""
 
         val aiOut = callLLMCodeWriter(client, apiKey, customModel, prompt) ?: ""
         val updatedCode = if (aiOut.contains("<<<SEARCH>>>") && aiOut.contains("<<<REPLACE>>>")) {
-            val s = aiOut.substringAfter("<<<SEARCH>>>").substringBefore("<<<REPLACE>>>").trim("\r", "\n")
-            val r = aiOut.substringAfter("<<<REPLACE>>>").substringBefore("<<<END>>>").trim("\r", "\n")
+            val s = aiOut.substringAfter("<<<SEARCH>>>").substringBefore("<<<REPLACE>>>").trim('\r', '\n')
+            val r = aiOut.substringAfter("<<<REPLACE>>>").substringBefore("<<<END>>>").trim('\r', '\n')
             if (s.isNotBlank() && currentCode.contains(s)) currentCode.replaceFirst(s, r) else ""
-        } else if (aiOut.contains("package com.jarvis.ai") && aiOut.length > 5000) {
-            aiOut
-        } else ""
+        } else if (aiOut.contains("package com.jarvis.ai") && aiOut.length > 5000) aiOut else ""
 
         if (updatedCode.isBlank() || !isBalancedCode(updatedCode)) {
-            return "❌ कोड जेनरेट नहीं हो सका या मैच नहीं हुआ—कृपया कमांड थोड़ा और स्पष्ट लिखें।"
+            return@withContext "❌ कोड जेनरेट नहीं हो सका—कमांड थोड़ा और स्पष्ट लिखें।"
         }
 
         onProgress("🚀 नया कोड GitHub पर पुश कर रहा हूँ...")
@@ -840,8 +832,19 @@ $currentCode"""
         val putBody = JSONObject().put("message", "JARVIS Self-Code Update").put("content", encoded).apply { if (sha.isNotBlank()) put("sha", sha) }
         val putReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json")
             .put(putBody.toString().toRequestBody("application/json".toMediaType())).build()
+        val pushErr = client.newCall(putReq).execute().use { res ->
+            if (!res.isSuccessful) "❌ GitHub push fail (${res.code}): ${res.body.string().take(120)}" else ""
+        }
+        if (pushErr.isNotEmpty()) return@withContext pushErr
+        return@withContext "✅ कोड GitHub पर पुश हो गया! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्जन इंस्टॉल करें।"
+    } catch (e: Exception) {
+        return@withContext "❌ सेल्फ-कोडिंग त्रुटि: ${e.message}"
+    }
+}
+
+            .put(putBody.toString().toRequestBody("application/json".toMediaType())).build()
         client.newCall(putReq).execute().use { res ->
-            if (!res.isSuccessful) return "❌ GitHub push fail (${res.code}): ${res.body?.string()?.take(150)}"
+            if (!res.isSuccessful) return "❌ GitHub push fail (${res.code}): ${res.body.string()?.take(150)}"
         }
         "✅ कोड सफलतापूर्वक GitHub पर पुश हो गया है! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्जन इंस्टॉल कर लें।"
     } catch (e: Exception) {
@@ -1019,7 +1022,7 @@ suspend fun askGemini(
             .get()
             .build()
         client.newCall(fallbackReq).execute().use { res ->
-            val rawReply = res.body?.string() ?: ""
+            val rawReply = res.body.string() ?: ""
             if (res.isSuccessful && rawReply.isNotBlank()) {
                 val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
                 val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(1500)
