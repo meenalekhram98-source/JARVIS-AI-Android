@@ -956,7 +956,7 @@ private fun applyAllTags(
         val execResult = try { DynamicExecutor.executeJsonAction(context, actionJson) } catch (e: Exception) { "Action error: ${e.localizedMessage}" }
         reply = if (reply.isBlank()) execResult else "$reply\n$execResult"
     }
-    Regex("\\[SELFCODE:(.*?)\\]").find(reply)?.let {
+    Regex("\\[SELFCODE:([\\s\\S]*?)\\]").find(reply)?.let {
         val jsonStr = it.groupValues[1].trim()
         reply = reply.replace(Regex("\\[SELFCODE:.*?\\]"), "").trim()
         try {
@@ -967,6 +967,7 @@ private fun applyAllTags(
         } catch (_: Exception) {}
     }
 
+    if (selfCodeTask == null && mode == "CODE" && userMessage.trim().length > 4) { selfCodeTask = Pair("app/src/main/java/com/jarvis/ai/MainActivity.kt", userMessage.trim()) }
     return Pair(reply, selfCodeTask)
 }
 
