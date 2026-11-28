@@ -1198,6 +1198,5 @@ suspend fun askGemini(
         lastError = if (lastError.isBlank()) (e.localizedMessage ?: "Connection failed") else "$lastError | ${e.localizedMessage}"
     }
 
-    return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" }})"
-}
-}
+    return@withContext "समस्या आई (${lastError.ifBlank { "इंटरनेट या API Key जांचें" )"
+
