@@ -329,6 +329,21 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     }
 
     var jarvisPowerOn by remember { mutableStateOf(true) }
+    var attachedImageB64 by remember { mutableStateOf("") }
+    val imgPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val bmp = android.graphics.BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
+                val scaled = android.graphics.Bitmap.createScaledBitmap(bmp, 768, (768f * bmp.height / bmp.width).toInt().coerceAtLeast(1), true)
+                val out = java.io.ByteArrayOutputStream()
+                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+                attachedImageB64 = android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+                Toast.makeText(context, "📷 फ़ोटो जुड़ गई — अब सवाल पूछें!", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) { Toast.makeText(context, "फ़ोटो लोड नहीं हुई", Toast.LENGTH_SHORT).show() }
+        }
+    }
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when {
@@ -366,6 +381,23 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
     }
 
     fun sendQuery(query: String) {
+        val qLow = query.trim().lowercase()
+        val memPrefs = context.getSharedPreferences("jarvis_vault", android.content.Context.MODE_PRIVATE)
+        if (qLow.startsWith("याद रखो") || qLow.startsWith("yad rakho") || qLow.startsWith("remember ")) {
+            val fact = query.substringAfter(" ").substringAfter("रखो").substringAfter("rakho").trim()
+            val oldM = memPrefs.getString("vault_facts", "") ?: ""
+            memPrefs.edit().putString("vault_facts", (oldM + "\n• " + fact).trim()).apply()
+            messages.add(ChatMessage(query, true)); messages.add(ChatMessage("🧠 याद रख लिया सर: \"$fact\"", false)); return
+        }
+        if (qLow == "मेरी यादें" || qLow == "meri yadein" || qLow == "my memories") {
+            val allM = memPrefs.getString("vault_facts", "") ?: ""
+            messages.add(ChatMessage(query, true)); messages.add(ChatMessage(if (allM.isBlank()) "📭 मेमोरी वॉल्ट अभी खाली है सर।" else "🧠 **JARVIS Long-Term Memory:**\n$allM", false)); return
+        }
+        if (qLow == "यादें मिटाओ" || qLow == "clear memory") {
+            memPrefs.edit().remove("vault_facts").apply()
+            messages.add(ChatMessage(query, true)); messages.add(ChatMessage("🗑️ सारी यादें साफ़ कर दी गई हैं सर।", false)); return
+        }
+        if (attachedImageB64.isNotEmpty()) { memPrefs.edit().putString("pending_img", attachedImageB64).apply(); attachedImageB64 = "" }
         if (!jarvisPowerOn) {
             Toast.makeText(context, "🔴 JARVIS abhi OFF hai — pehle Power (⏻) ON karein", Toast.LENGTH_SHORT).show()
             return
@@ -663,7 +695,8 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                 }
             }
             Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                IconButton(onClick = { imgPicker.launch("image/*") }, modifier = Modifier.size(36.dp)) { Text(if (attachedImageB64.isNotEmpty()) "🖼️" else "📷", fontSize = 18.sp) }
+                        OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
                     placeholder = { Text("JARVIS से पूछें या खुद को अपग्रेड करने को कहें...", color = Color.Gray, fontSize = 14.sp) },
@@ -1262,10 +1295,12 @@ val modelsToTry = if (cleanKey.isBlank() || preferOr) emptyList() else listOf(
         [SELFCODE: {"file":"app/src/main/java/com/jarvis/ai/MainActivity.kt","instruction":"exact technical description of code change"}]
     """.trimIndent()
 
+    val vMem = context.getSharedPreferences("jarvis_vault", android.content.Context.MODE_PRIVATE).getString("vault_facts", "") ?: ""
+    val mBlk = if (vMem.isNotBlank()) "\nLong-Term Memory Vault:\n$vMem" else ""
     val systemInstruction = when (mode) {
-        "CODE" -> "$ownerIdentity You are JARVIS in MASTER SOFTWARE ARCHITECT MODE. Write clean, complete, production-grade code in any language requested, and use [SELFCODE: ...] whenever upgrading yourself."
-        "STUDY" -> "$ownerIdentity You are JARVIS in STUDY MODE. Explain concepts clearly in simple Hindi/Hinglish with bullet points and examples."
-        else -> "$ownerIdentity You are J.A.R.V.I.S., Tony Stark's calm, witty, hyper-efficient AI digital butler created for Lekhram. Address user respectfully as 'Lekhram Sir' or 'Sir'. Keep answers crisp, direct, confident with subtle dry British wit—never long robotic lectures. Confirm actions like 'Done, Sir.' Match user language (Hinglish/Hindi/English)."
+        "CODE" -> "$ownerIdentity$mBlk You are JARVIS in MASTER SOFTWARE ARCHITECT MODE. Write clean, complete, production-grade code in any language requested, and use [SELFCODE: ...] whenever upgrading yourself."
+        "STUDY" -> "$ownerIdentity$mBlk You are JARVIS in STUDY MODE. Explain concepts clearly in simple Hindi/Hinglish with bullet points and examples."
+        else -> "$ownerIdentity$mBlk You are J.A.R.V.I.S., Tony Stark's calm, witty, hyper-efficient AI digital butler created for Lekhram. Address user respectfully as 'Lekhram Sir' or 'Sir'. Keep answers crisp, direct, confident with subtle dry British wit—never long robotic lectures. Confirm actions like 'Done, Sir.' Match user language (Hinglish/Hindi/English)."
     }
 
     var lastError = ""
@@ -1274,7 +1309,12 @@ val modelsToTry = if (cleanKey.isBlank() || preferOr) emptyList() else listOf(
             val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey"
             val jsonBody = JSONObject().apply {
                 put("system_instruction", JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))) })
-                put("contents", JSONArray().put(JSONObject().apply { put("parts", JSONArray().put(JSONObject().put("text", userMessage))) }))
+                val vP = context.getSharedPreferences("jarvis_vault", android.content.Context.MODE_PRIVATE)
+                    val pImg = vP.getString("pending_img", "") ?: ""
+                    if (pImg.isNotEmpty()) vP.edit().remove("pending_img").apply()
+                    val arr = JSONArray().put(JSONObject().put("text", userMessage))
+                    if (pImg.isNotEmpty()) arr.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", pImg)))
+                    put("contents", JSONArray().put(JSONObject().apply { put("parts", arr) }))
             }
             val request = Request.Builder().url(url).post(jsonBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(request).execute().use { response ->
@@ -1284,7 +1324,7 @@ val modelsToTry = if (cleanKey.isBlank() || preferOr) emptyList() else listOf(
                         ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
                     if (!rawReply.isNullOrBlank()) {
                         val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
-                        val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(500)
+                        val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(4000)
                         prefs.edit().putString("recent_chat", updatedHistory).apply()
 
                         if (selfCodeTask != null) {
@@ -1311,7 +1351,7 @@ val modelsToTry = if (cleanKey.isBlank() || preferOr) emptyList() else listOf(
                 res.close()
             if (res.isSuccessful && rawReply.isNotBlank()) {
                 val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
-                val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(500)
+                val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(4000)
                 prefs.edit().putString("recent_chat", updatedHistory).apply()
 
                 if (selfCodeTask != null) {
