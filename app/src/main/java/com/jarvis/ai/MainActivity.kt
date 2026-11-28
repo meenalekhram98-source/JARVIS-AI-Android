@@ -884,7 +884,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
     } else if (k.isNotBlank()) {
         for (m in listOf(customModel, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro").filter { it.isNotBlank() && !it.contains("/") }.distinct()) {
             try {
-                val b = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                val b = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))).put("generationConfig", JSONObject().put("temperature", 0.15).put("maxOutputTokens", 8192))
                 val r = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$k").post(b.toString().toRequestBody("application/json".toMediaType())).build()
                 client.newCall(r).execute().use { res ->
                     val s = res.body?.string() ?: ""
@@ -1002,7 +1002,68 @@ $snippet"""
             if (!res.isSuccessful) "❌ GitHub push fail (${res.code}): ${res.body?.string()?.take(120)}" else ""
         }
         if (pushErr.isNotEmpty()) return@withContext pushErr
-        return@withContext "✅ कोड GitHub पर पुश हो गया! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्ज़न इंस्टॉल करें।"
+        onProgress("⏳ GitHub APK बिल्ड मॉनिटर कर रहा हूँ (Auto-Healing सक्रिय)...")
+            val runsUrl = "https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/actions/runs?per_page=1"
+            var buildConclusion = ""
+            var lastRunId = 0L
+            for (attempt in 1..14) {
+                kotlinx.coroutines.delay(6000)
+                try {
+                    val rReq = Request.Builder().url(runsUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json").build()
+                    val rJson = JSONObject(client.newCall(rReq).execute().use { it.body?.string() ?: "{}" })
+                    val runObj = rJson.optJSONArray("workflow_runs")?.optJSONObject(0)
+                    if (runObj != null) {
+                        lastRunId = runObj.optLong("id", 0L)
+                        val st = runObj.optString("status", "")
+                        val conc = runObj.optString("conclusion", "")
+                        onProgress("⚙️ बिल्ड स्टेटस: $st ${if (conc.isNotEmpty()) "($conc)" else "(${attempt * 6}s)"}")
+                        if (st == "completed") {
+                            buildConclusion = conc
+                            break
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            if (buildConclusion == "success") {
+                return@withContext "✅ मिशन सफल! नया APK तैयार है—ऊपर Update (⬇️) आइकन दबाकर इंस्टॉल करें।"
+            } else if (buildConclusion == "failure" && lastRunId > 0L) {
+                onProgress("🩺 बिल्ड फेल हुआ! खुद एरर लॉग पढ़कर Auto-Heal कर रहा हूँ...")
+                val logUrl = "https://api.github.com/repos/meenalekhram98-source/JARVIS-AI-Android/actions/runs/$lastRunId/logs"
+                val logReq = Request.Builder().url(logUrl).header("Authorization", "Bearer $token").build()
+                val errSnippet = try {
+                    client.newCall(logReq).execute().use { resp ->
+                        val bytes = resp.body?.bytes() ?: ByteArray(0)
+                        val zis = java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(bytes))
+                        val sb = StringBuilder()
+                        var entry = zis.nextEntry
+                        while (entry != null) {
+                            val txt = zis.bufferedReader().readText()
+                            txt.lines().filter { it.contains("e: ") || it.contains("Unresolved") || it.contains("Expecting") }.take(12).forEach { sb.appendLine(it) }
+                            entry = zis.nextEntry
+                        }
+                        sb.toString().take(1500)
+                    }
+                } catch (ex: Exception) { "Compile error in $targetPath" }
+                val healPrompt = "Fix these Kotlin compiler errors in $targetPath:\n$errSnippet\n\nOutput ONLY exact surgical replacement blocks:\n<<<SEARCH>>>\nexact existing lines\n<<<REPLACE>>>\nfixed lines\n<<<END>>>\n\nRelevant code:\n${updatedCode.take(22000)}"
+                val healOut = callLLMCodeWriter(client, apiKey, customModel, healPrompt) ?: ""
+                var healedCode = updatedCode
+                for (hm in regex.findAll(healOut)) {
+                    val hs = cleanFence(hm.groupValues[1])
+                    val hr = cleanFence(hm.groupValues[2])
+                    if (hs.isNotBlank() && healedCode.contains(hs)) healedCode = healedCode.replaceFirst(hs, hr)
+                }
+                if (healedCode != updatedCode && isBalancedCode(healedCode)) {
+                    val reGet = JSONObject(client.newCall(getReq).execute().use { it.body?.string() ?: "{}" })
+                    val newSha = reGet.optString("sha", sha)
+                    val healEnc = Base64.encodeToString(healedCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                    val healPut = JSONObject().put("message", "JARVIS Auto-Heal Fix").put("content", healEnc).put("sha", newSha)
+                    val healReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json").put(healPut.toString().toRequestBody("application/json".toMediaType())).build()
+                    client.newCall(healReq).execute().close()
+                    return@withContext "🩺 Auto-Heal पूरा! एरर खुद ठीक करके दोबारा GitHub पर पुश कर दिया है—60 सेकंड बाद Update (⬇️) दबाएँ।"
+                }
+                return@withContext "⚠️ बिल्ड एरर मिला:\n${errSnippet.take(300)}"
+            }
+            return@withContext "✅ कोड पुश हो गया! 60 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्ज़न इंस्टॉल करें।"
     } catch (e: Exception) {
         return@withContext "❌ सेल्फ़-कोडिंग त्रुटि: ${e.message}"
     }
