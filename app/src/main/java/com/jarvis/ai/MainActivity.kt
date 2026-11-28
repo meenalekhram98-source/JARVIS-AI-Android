@@ -203,6 +203,19 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         } catch (_: Exception) {}
     }
 
+    
+    fun runSelfDiagnostics(githubToken: String, apiKey: String): String {
+        val ghOk = githubToken.trim().startsWith("ghp_") || githubToken.trim().startsWith("github_pat_")
+        val ttsOk = isTtsReady
+        val aiOk = apiKey.trim().isNotBlank()
+        return """
+🔍 J.A.R.V.I.S SELF-HEAL DIAGNOSTICS:
+• Self-Code GitHub Engine: ${if (ghOk) "✅ ACTIVE (Khud ko update kar sakta hai)" else "❌ INACTIVE (Settings mein GitHub Token dalein)"}
+• Voice TTS Engine: ${if (ttsOk) "✅ ACTIVE (Awaaz ready hai)" else "⚠️ REPAIRING (TTS re-init needed)"}
+• Primary AI Brain: ${if (aiOk) "✅ GEMINI FAST MODE" else "⚡ POLLINATIONS FALLBACK MODE"}
+""".trimIndent()
+    }
+
     override fun onDestroy() {
         try {
             tts?.stop()
