@@ -810,7 +810,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
     val cleanKey = apiKey.trim()
     var rawOut: String? = null
 
-    if (false) {
+    if (cleanKey.isNotBlank()) {
         val models = listOf(customModel, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-pro").distinct()
         for (model in models) {
             try {
@@ -832,7 +832,7 @@ suspend fun callLLMCodeWriter(client: OkHttpClient, apiKey: String, customModel:
 
     if (rawOut == null) {
         try {
-            val fbBody = JSONObject().put("model", "mistral").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "Return ONLY complete valid Kotlin code without markdown fences.\n\n$prompt")))
+            val fbBody = JSONObject().put("model", "mistral").put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "$prompt")))
                 val fbReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbBody.toString().toRequestBody("application/json".toMediaType())).build()
             client.newCall(fbReq).execute().use { res ->
                 if (res.isSuccessful) {
