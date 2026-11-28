@@ -75,16 +75,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.net.URLEncoder
 import java.util.Calendar
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 data class ChatMessage(val text: String, val isUser: Boolean)
 
@@ -986,7 +982,7 @@ $snippet"""
         val putReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json")
             .put(putBody.toString().toRequestBody("application/json".toMediaType())).build()
         val pushErr = client.newCall(putReq).execute().use { res ->
-            if (!res.isSuccessful) "❌ GitHub push fail (${res.code}): ${res.body?.string().take(120)}" else ""
+            if (!res.isSuccessful) "❌ GitHub push fail (${res.code}): ${res.body?.string()?.take(120)}" else ""
         }
         if (pushErr.isNotEmpty()) return@withContext pushErr
         return@withContext "✅ कोड GitHub पर पुश हो गया! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्ज़न इंस्टॉल करें।"
