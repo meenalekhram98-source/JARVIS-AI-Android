@@ -945,6 +945,7 @@ suspend fun selfCodeAndHealGitHub(
     filePath: String,
     instruction: String,
     onProgress: suspend (String) -> Unit
+): String = withContext(Dispatchers.IO) {
     val token = githubToken.trim()
     if (token.isBlank()) return@withContext "❌ कृपया Settings (⚙️) में अपना GitHub Token डालें।"
     val client = OkHttpClient.Builder().connectTimeout(60, TimeUnit.SECONDS).readTimeout(180, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).build()
@@ -985,6 +986,16 @@ $snippet"""
         val encoded = Base64.encodeToString(updatedCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         val putBody = JSONObject().put("message", "JARVIS Self-Code Update").put("content", encoded).apply { if (sha.isNotBlank()) put("sha", sha) }
         val putReq = Request.Builder().url(apiUrl).header("Authorization", "Bearer $token").header("Accept", "application/vnd.github+json")
+            .put(putBody.toString().toRequestBody("application/json".toMediaType())).build()
+        val pushErr = client.newCall(putReq).execute().use { res ->
+            if (!res.isSuccessful) "❌ GitHub push fail (${res.code}): ${res.body.string().take(120)}" else ""
+        }
+        if (pushErr.isNotEmpty()) return@withContext pushErr
+        return@withContext "✅ कोड GitHub पर पुश हो गया! 90 सेकंड बाद ऊपर Update (⬇️) आइकन से नया वर्ज़न इंस्टॉल करें।"
+    } catch (e: Exception) {
+        return@withContext "❌ सेल्फ़-कोडिंग त्रुटि: ${e.message}"
+    }
+}
 
 
 private fun applyAllTags(
@@ -1134,7 +1145,7 @@ suspend fun askGemini(
 
                         if (selfCodeTask != null) {
                             withContext(Dispatchers.Main) { onProgress(cleanReply) }
-                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, { prog -> withContext(Dispatchers.Main) { onProgress(prog) } }
+                            return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, { prog -> withContext(Dispatchers.Main) { onProgress(prog) } })
                         }
                         return@withContext cleanReply
                     }
@@ -1164,7 +1175,7 @@ suspend fun askGemini(
 
                 if (selfCodeTask != null) {
                     withContext(Dispatchers.Main) { onProgress(cleanReply) }
-                    return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, { prog -> withContext(Dispatchers.Main) { onProgress(prog) } }
+                    return@withContext selfCodeAndHealGitHub(cleanKey, githubToken, customModel, selfCodeTask.first, selfCodeTask.second, { prog -> withContext(Dispatchers.Main) { onProgress(prog) } })
                 }
                 return@withContext cleanReply
             } else {
