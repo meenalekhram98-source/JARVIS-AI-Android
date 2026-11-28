@@ -1081,7 +1081,7 @@ suspend fun askGemini(
     val learnedSkills = prefs.getString("learned_skills", "") ?: ""
     val recentHistory = prefs.getString("recent_chat", "") ?: ""
 
-    val client = OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).readTimeout(35, TimeUnit.SECONDS).build()
+    val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     val modelsToTry = if (cleanKey.isBlank()) emptyList() else listOf(
         customModel,
         "gemini-2.5-flash",
@@ -1134,7 +1134,7 @@ suspend fun askGemini(
                         ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text")
                     if (!rawReply.isNullOrBlank()) {
                         val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
-                        val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(1500)
+                        val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(500)
                         prefs.edit().putString("recent_chat", updatedHistory).apply()
 
                         if (selfCodeTask != null) {
@@ -1161,7 +1161,7 @@ suspend fun askGemini(
                 res.close()
             if (res.isSuccessful && rawReply.isNotBlank()) {
                 val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
-                val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(1500)
+                val updatedHistory = (recentHistory + "\nUser: $userMessage\nJARVIS: $cleanReply").takeLast(500)
                 prefs.edit().putString("recent_chat", updatedHistory).apply()
 
                 if (selfCodeTask != null) {
