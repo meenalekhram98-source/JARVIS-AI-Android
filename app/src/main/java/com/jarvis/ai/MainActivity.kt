@@ -555,11 +555,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                                 Toast.makeText(context, "🟢 JARVIS Systems Online", Toast.LENGTH_SHORT).show()
                             }
                         }) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Master Power",
-                                tint = if (jarvisPowerOn) Color(0xFF00E676) else Color(0xFFFF5252)
-                            )
+                            Text("⏻", color = if (jarvisPowerOn) Color(0xFF00E676) else Color(0xFFFF5252), fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         }
                     IconButton(onClick = { showSettings = true }, modifier = Modifier.size(30.dp)) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings", tint = cyan)
