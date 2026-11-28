@@ -16,6 +16,20 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.media.MediaPlayer
+import android.media.audiofx.PresetReverb
+import android.media.audiofx.Equalizer
+import java.io.File
+import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import okio.ByteString
 import android.util.Base64
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -154,15 +168,134 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         } catch (_: Exception) {}
     }
 
-    private fun speakHindi(text: String) {
+    private var sciFiPlayer: MediaPlayer? = null
+    private var sciFiReverb: PresetReverb? = null
+    private var sciFiEq: Equalizer? = null
+
+    private fun stopSciFiAudio() {
+        try {
+            sciFiReverb?.release(); sciFiReverb = null
+            sciFiEq?.release(); sciFiEq = null
+            sciFiPlayer?.stop(); sciFiPlayer?.release(); sciFiPlayer = null
+        } catch (_: Exception) {}
+    }
+
+    private fun fallbackOfflineTts(cleanText: String) {
         if (!isTtsReady) return
         try {
             applyVoiceProfile()
-            val cleanText = text.replace("*", "").replace("#", "").trim()
             val params = Bundle()
             params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "jarvis_utt")
-            tts?.setPitch(0.78f); tts?.setSpeechRate(0.98f); tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "jarvis_utt")
+            tts?.setPitch(0.78f)
+            tts?.setSpeechRate(0.98f)
+            tts?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, params, "jarvis_utt")
         } catch (_: Exception) {}
+    }
+
+    private fun speakHindi(text: String) {
+        val cleanText = text.replace("*", "").replace("#", "").replace("\"", "").replace("&", "and").replace("<", "").replace(">", "").trim()
+        if (cleanText.isEmpty()) return
+
+        stopSciFiAudio()
+        try { tts?.stop() } catch (_: Exception) {}
+
+        Thread {
+            try {
+                val reqId = UUID.randomUUID().toString().replace("-", "")
+                val client = OkHttpClient.Builder().readTimeout(10, TimeUnit.SECONDS).build()
+                val request = Request.Builder()
+                    .url("wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0")
+                    .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
+                    .build()
+
+                val audioBuffer = ByteArrayOutputStream()
+                val lock = Object()
+                var done = false
+                var failed = false
+
+                val ws = client.newWebSocket(request, object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        val cfg = "Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}"
+                        webSocket.send(cfg)
+
+                        val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='hi-IN'><voice name='hi-IN-MadhurNeural'><prosody pitch='-11Hz' rate='+6%'>$cleanText</prosody></voice></speak>"
+                        val msg = "X-RequestId:$reqId\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n$ssml"
+                        webSocket.send(msg)
+                    }
+
+                    override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                        val arr = bytes.toByteArray()
+                        if (arr.size > 2) {
+                            val headerLen = ((arr[0].toInt() and 0xFF) shl 8) or (arr[1].toInt() and 0xFF)
+                            val dataStart = headerLen + 2
+                            if (dataStart < arr.size) {
+                                audioBuffer.write(arr, dataStart, arr.size - dataStart)
+                            }
+                        }
+                    }
+
+                    override fun onMessage(webSocket: WebSocket, textMsg: String) {
+                        if (textMsg.contains("Path:turn.end")) {
+                            synchronized(lock) { done = true; lock.notifyAll() }
+                            webSocket.close(1000, "Done")
+                        }
+                    }
+
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        synchronized(lock) { failed = true; done = true; lock.notifyAll() }
+                    }
+                })
+
+                synchronized(lock) {
+                    if (!done) lock.wait(8000)
+                }
+
+                val audioBytes = audioBuffer.toByteArray()
+                if (failed || audioBytes.isEmpty()) {
+                    runOnUiThread { fallbackOfflineTts(cleanText) }
+                    return@Thread
+                }
+
+                val outFile = File(cacheDir, "jarvis_scifi.mp3")
+                FileOutputStream(outFile).use { it.write(audioBytes) }
+
+                runOnUiThread {
+                    try {
+                        val mp = MediaPlayer()
+                        mp.setDataSource(outFile.absolutePath)
+                        mp.prepare()
+
+                        // Sci-Fi Metallic + Holographic Chamber Effect
+                        try {
+                            val eq = Equalizer(0, mp.audioSessionId)
+                            eq.enabled = true
+                            val bands = eq.numberOfBands.toInt()
+                            if (bands >= 5) {
+                                eq.setBandLevel(0, (-300).toShort()) // Low rumble cut (highpass)
+                                eq.setBandLevel((bands - 1).toShort(), (400).toShort()) // Crisp metallic treble
+                            }
+                            sciFiEq = eq
+
+                            val rev = PresetReverb(0, mp.audioSessionId)
+                            rev.preset = PresetReverb.PRESET_SMALLROOM
+                            rev.enabled = true
+                            mp.attachAuxEffect(rev.id)
+                            mp.setAuxEffectSendLevel(0.45f)
+                            sciFiReverb = rev
+                        } catch (_: Exception) {}
+
+                        mp.setOnCompletionListener { stopSciFiAudio() }
+                        sciFiPlayer = mp
+                        mp.start()
+                    } catch (_: Exception) {
+                        fallbackOfflineTts(cleanText)
+                    }
+                }
+            } catch (_: Exception) {
+                runOnUiThread { fallbackOfflineTts(cleanText) }
+            }
+        }.start()
     }
 
     override fun onDestroy() {
