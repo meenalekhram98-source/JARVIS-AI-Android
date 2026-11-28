@@ -997,7 +997,7 @@ suspend fun selfCodeAndHealGitHub(
         val prompt = """Modify JARVIS AI ($targetPath, total ${allLines.size} lines) for User Request: $instruction
 Output ONLY exact surgical replacement blocks (do NOT include line numbers, do NOT output whole file):
 <<<SEARCH>>>
-exact existing lines (4 to 20 lines)
+exact existing lines (STRICTLY 4 to 10 lines max so output NEVER truncates; always finish with <<<END>>> and balanced {}())
 <<<REPLACE>>>
 new updated lines
 <<<END>>>
