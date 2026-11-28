@@ -1057,7 +1057,9 @@ suspend fun askGemini(
             userMessage.contains(".yml", ignoreCase = true) -> ".github/workflows/android.yml"
             else -> "app/src/main/java/com/jarvis/ai/MainActivity.kt"
         }
-        return@withContext selfCodeAndHealGitHub(apiKey, githubToken, customModel, targetFile, userMessage, onProgress)
+        val orKey = prefs.getString("openrouter_api_key", "") ?: ""
+        val effectiveKey = if (preferOr && orKey.isNotBlank()) orKey else apiKey.ifBlank { orKey }
+        return@withContext selfCodeAndHealGitHub(effectiveKey, githubToken, customModel, targetFile, userMessage, onProgress)
     }
     val cleanKey = apiKey.trim()
     val prefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
