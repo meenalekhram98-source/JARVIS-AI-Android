@@ -1157,7 +1157,7 @@ suspend fun askGemini(
         val encodedPrompt = URLEncoder.encode(fullPrompt, "UTF-8")
         val fbPayload = JSONObject().put("model", "openai").put("messages", JSONArray().put(JSONObject().put("role", "system").put("content", systemInstruction)).put(JSONObject().put("role", "user").put("content", userMessage))).toString().toRequestBody("application/json".toMediaType()); val fallbackReq = Request.Builder().url("https://text.pollinations.ai/openai").post(fbPayload).build()
         val res = client.newCall(fallbackReq).execute()
-            val rawReply = res.body?.string() ?: ""
+            val rawFb = res.body?.string() ?: ""; val rawReply = if (rawFb.trim().startsWith("{")) JSONObject(rawFb).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: "" else rawFb
                 res.close()
             if (res.isSuccessful && rawReply.isNotBlank()) {
                 val (cleanReply, selfCodeTask) = applyAllTags(context, prefs, rawReply, learnedFacts, learnedSkills)
