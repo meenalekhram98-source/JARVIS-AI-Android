@@ -447,7 +447,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color(0xFF10243A), background, Color(0xFF02050B))))
+                .background(Brush.verticalGradient(listOf(Color(0xFF0D1E32), background, Color(0xFF02050B))))
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 10.dp)
@@ -493,6 +493,28 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                 }
             }
 
+            val hudAccent = when (selectedMode) {
+                "CODE" -> Color(0xFF00E676)
+                "STUDY" -> Color(0xFFFFB300)
+                else -> cyan
+            }
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+            val batPct = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 85
+            val batIntent = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+            val batTemp = (batIntent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 320) ?: 320) / 10f
+            val activeEngine = if (prefs.getString("primary_engine", "GEMINI") == "OPENROUTER") "OPENROUTER" else "GEMINI 2.5"
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                    .background(Color(0xFF0D1D30), CutCornerShape(8.dp))
+                    .border(1.dp, hudAccent.copy(alpha = 0.4f), CutCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🔋 $batPct% | ${batTemp}°C", color = Color.White, fontSize = 11.sp)
+                Text("📶 5G • ONLINE", color = hudAccent, fontSize = 11.sp)
+                Text("⚡ $activeEngine", color = Color(0xFFFFD54F), fontSize = 11.sp)
+            }
             val hudAccent = when (selectedMode) {
                 "CODE" -> Color(0xFF00E676)
                 "STUDY" -> Color(0xFFFFB300)
@@ -591,6 +613,23 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                     }
                 }
             }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf("🔋 सिस्टम स्टेटस" to "सिस्टम स्टेटस", "🌐 नेटवर्क चेक" to "नेटवर्क चेक करो", "🛠️ बिल्ड चेक" to "बिल्ड स्टेटस बताओ").forEach { (chipLabel, chipCmd) ->
+                    Box(
+                        modifier = Modifier.weight(1f)
+                            .background(Color(0xFF0F2338), CutCornerShape(8.dp))
+                            .border(1.dp, hudAccent.copy(alpha = 0.5f), CutCornerShape(8.dp))
+                            .clickable { sendQuery(chipCmd) }
+                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(chipLabel, color = Color.White, fontSize = 10.sp, maxLines = 1)
+                    }
+                }
+            }
             Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = inputText,
@@ -618,7 +657,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                 }
                 IconButton(
                     onClick = { sendQuery(inputText) },
-                    modifier = Modifier.size(48.dp).background(Color(0xFF087E9B), CircleShape)
+                    modifier = Modifier.size(48.dp).background(hudAccent.copy(alpha = 0.28f), CircleShape)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White)
                 }
