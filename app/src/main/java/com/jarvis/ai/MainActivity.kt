@@ -805,6 +805,7 @@ suspend fun selfCodeAndHealGitHub(
         val currentCode = String(Base64.decode(getJson.getString("content").replace("\n", ""), Base64.DEFAULT), Charsets.UTF_8)
 
         onProgress("🧠 नया और एरर-फ्री कोड लिख रहा हूँ...")
+        val idx = currentCode.indexOf("J.A.R.V.I.S").let { if (it > 300) it - 300 else 0 }; val snippet = currentCode.substring(idx, minOf(currentCode.length, idx + 3500))
         val prompt = """Modify JARVIS AI $targetPath for User Request: $instruction
 Output ONLY the exact replacement block in this format (do NOT output the whole file):
 <<<SEARCH>>>
@@ -814,7 +815,7 @@ new updated lines
 <<<END>>>
 
 File content:
-${currentCode.take(12000)}"""
+$snippet"""
 
         val aiOut = callLLMCodeWriter(client, apiKey, customModel, prompt) ?: ""
         val updatedCode = if (aiOut.contains("<<<SEARCH>>>") && aiOut.contains("<<<REPLACE>>>")) {
