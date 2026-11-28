@@ -548,8 +548,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
                         IconButton(modifier = Modifier.size(30.dp), onClick = {
                             jarvisPowerOn = !jarvisPowerOn
                             if (!jarvisPowerOn) {
-                                onStopSpeak()
-                                try { speechRecognizer?.cancel() } catch (_: Exception) {}
+                                
                                 OfflineBrainManager.shutdown()
                                 Toast.makeText(context, "🔴 JARVIS Powered OFF (RAM Freed)", Toast.LENGTH_SHORT).show()
                             } else {
