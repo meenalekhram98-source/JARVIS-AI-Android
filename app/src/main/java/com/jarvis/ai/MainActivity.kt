@@ -342,7 +342,7 @@ fun JarvisApp(onSpeak: (String) -> Unit, onStopSpeak: () -> Unit) {
         }
 
         val cmdResult = try {
-            handleDeviceCommand(context, query)
+            if (selectedMode == "Self-Code") null else handleDeviceCommand(context, query)
         } catch (e: Exception) {
             "कमांड चलाने में समस्या आई: ${e.localizedMessage}"
         }
@@ -436,7 +436,7 @@ try{val bm=context.getSystemService(Context.BATTERY_SERVICE) as android.os.Batte
 
     LaunchedEffect(Unit) {
         onSpeechFinishedCallback = {
-            if (prefs.getBoolean("auto_listen", false) && !isListening) startVoiceRecognition()
+            if (prefs.getBoolean("auto_listen", false) && !isListening) { android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ if (!isListening) startVoiceRecognition() }, 400L) }
         }
     }
     val background = Color(0xFF050B16)
