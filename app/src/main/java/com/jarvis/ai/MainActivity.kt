@@ -899,32 +899,43 @@ $snippet"""
         var patched = currentCode
         var patchCount = 0
         val regex = Regex("<<<SEARCH>>>\\s*\\n([\\s\\S]*?)\\n<<<REPLACE>>>\\s*\\n([\\s\\S]*?)\\n<<<END>>>")
-        for (m in regex.findAll(aiOut)) {
-            val s = m.groupValues[1].trim('\r', '\n')
-            val r = m.groupValues[2].trim('\r', '\n')
-            if (s.isNotBlank() && patched.contains(s)) {
-                patched = patched.replaceFirst(s, r)
-                patchCount++
-            } else if (s.isNotBlank()) {
-                val sLines = s.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                val cLines = patched.lines()
-                if (sLines.size >= 2) {
-                    for (i in 0..(cLines.size - sLines.size)) {
-                        var ok = true
-                        for (k in sLines.indices) {
-                            if (cLines[i + k].trim() != sLines[k]) { ok = false; break }
-                        }
-                        if (ok) {
-                            val exactOld = cLines.subList(i, i + sLines.size).joinToString("\n")
-                            patched = patched.replaceFirst(exactOld, r)
-                            patchCount++
-                            break
+        fun cleanFence(txt: String): String {
+                val lines = txt.trim('\r', '\n').lines().toMutableList()
+                if (lines.isNotEmpty() && lines.first().trim().startsWith("```")) lines.removeAt(0)
+                if (lines.isNotEmpty() && lines.last().trim().startsWith("```")) lines.removeAt(lines.lastIndex)
+                return lines.joinToString("\n")
+            }
+            for (m in regex.findAll(aiOut)) {
+                val s = cleanFence(m.groupValues[1])
+                val r = cleanFence(m.groupValues[2])
+                if (s.isNotBlank() && patched.contains(s)) {
+                    patched = patched.replaceFirst(s, r)
+                    patchCount++
+                } else if (s.isNotBlank()) {
+                    val sLines = s.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                    val cLines = patched.lines()
+                    if (sLines.isNotEmpty()) {
+                        for (i in cLines.indices) {
+                            if (cLines[i].trim() != sLines[0]) continue
+                            var ci = i
+                            var si = 0
+                            while (ci < cLines.size && si < sLines.size) {
+                                val cl = cLines[ci].trim()
+                                if (cl.isEmpty()) { ci++; continue }
+                                if (cl != sLines[si]) break
+                                ci++; si++
+                            }
+                            if (si == sLines.size) {
+                                val exactOld = cLines.subList(i, ci).joinToString("\n")
+                                patched = patched.replaceFirst(exactOld, r)
+                                patchCount++
+                                break
+                            }
                         }
                     }
                 }
             }
-        }
-        val updatedCode = if (patchCount > 0) patched else if (aiOut.contains("package com.jarvis.ai") && aiOut.length > 5000) aiOut else ""
+            val updatedCode = if (patchCount > 0) patched else if (aiOut.contains("package com.jarvis.ai") && aiOut.length > 5000) aiOut else ""
 
         if (updatedCode.isBlank() || !isBalancedCode(updatedCode)) {
             return@withContext "❌ कोड जेनरेट नहीं हो सका—कमांड थोड़ा और स्पष्ट लिखें।"
